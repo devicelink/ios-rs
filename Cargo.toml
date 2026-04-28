@@ -10,11 +10,13 @@ name = "ios_rs"
 path = "src/lib.rs"
 
 [[bin]]
-name = "ios"
-path = "src/bin/ios/main.rs"
+name              = "ios"
+path              = "src/bin/ios/main.rs"
+required-features = ["cli"]
 
 [features]
-default  = ["tunnel"]
+default  = ["tunnel", "cli"]
+cli      = ["tunnel", "dep:clap", "dep:comfy-table", "dep:anyhow"]
 sim      = []
 lockdown = ["dep:rustls", "dep:rustls-pemfile"]
 tunnel   = [
@@ -36,9 +38,9 @@ serde        = { version = "1", features = ["derive"] }
 serde_bytes  = "0.11"
 serde_json   = { version = "1", optional = true }
 thiserror    = "2"
-anyhow       = "1"
-clap         = { version = "4", features = ["derive"] }
-comfy-table  = "7"
+anyhow       = { version = "1", optional = true }
+clap         = { version = "4", features = ["derive"], optional = true }
+comfy-table  = { version = "7", optional = true }
 
 rustls           = { version = "0.23", features = ["tls12"], optional = true }
 rustls-pemfile   = { version = "2", optional = true }
