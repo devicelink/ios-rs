@@ -59,6 +59,7 @@ impl RsdClient {
     /// Accept an already-open `UnixStream` (e.g. from smoltcp) and do the RSD handshake.
     ///
     /// Routes through a loopback TCP relay because `RemoteXpcConn` uses `TcpStream`.
+    #[cfg(unix)]
     pub fn connect_stream(stream: std::os::unix::net::UnixStream) -> Result<Self, Error> {
         use std::net::TcpListener;
         let listener   = TcpListener::bind("127.0.0.1:0").map_err(crate::remotexpc::Error::Io)?;
