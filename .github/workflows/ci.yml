@@ -29,11 +29,11 @@ jobs:
         run: cargo build --workspace --locked
 
       - name: Unit tests
-        run: cargo test --workspace --lib --locked
+        run: cargo test --lib --locked
 
       - name: Integration tests (usbmux simulator)
-        run: cargo test -p usbmux --test integration --locked
-        # device.rs and device_paired.rs require a physical iOS device — skip in CI
+        run: cargo test --test usbmux --features sim --locked
+        # device tests require a physical iOS device — excluded from CI
 
       - name: Clippy
         run: cargo clippy --workspace --locked -- -D warnings

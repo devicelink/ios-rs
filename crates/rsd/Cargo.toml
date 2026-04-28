@@ -1,9 +1,0 @@
-[package]
-name    = "rsd"
-version.workspace = true
-edition.workspace = true
-
-[dependencies]
-remotexpc = { workspace = true }
-xpc-proto = { workspace = true }
-thiserror = { workspace = true }

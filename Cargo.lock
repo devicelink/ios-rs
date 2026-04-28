@@ -583,10 +583,30 @@ dependencies = [
  "anyhow",
  "clap",
  "comfy-table",
- "lockdown",
+ "ios-rs",
  "plist",
- "tunnel",
- "usbmux",
+]
+
+[[package]]
+name = "ios-rs"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chacha20poly1305",
+ "ed25519-dalek",
+ "hkdf",
+ "plist",
+ "rand",
+ "rustls",
+ "rustls-pemfile",
+ "serde",
+ "serde_bytes",
+ "serde_json",
+ "sha2",
+ "smoltcp",
+ "srp",
+ "thiserror",
+ "x25519-dalek",
 ]
 
 [[package]]
@@ -642,18 +662,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "224399e74b87b5f3557511d98dff8b14089b3dadafcab6bb93eab67d3aace965"
 dependencies = [
  "scopeguard",
-]
-
-[[package]]
-name = "lockdown"
-version = "0.1.0"
-dependencies = [
- "plist",
- "rustls",
- "rustls-pemfile",
- "serde",
- "thiserror",
- "usbmux",
 ]
 
 [[package]]
@@ -893,14 +901,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "remotexpc"
-version = "0.1.0"
-dependencies = [
- "thiserror",
- "xpc-proto",
-]
-
-[[package]]
 name = "ring"
 version = "0.17.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -912,15 +912,6 @@ dependencies = [
  "libc",
  "untrusted",
  "windows-sys 0.52.0",
-]
-
-[[package]]
-name = "rsd"
-version = "0.1.0"
-dependencies = [
- "remotexpc",
- "thiserror",
- "xpc-proto",
 ]
 
 [[package]]
@@ -1205,29 +1196,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tunnel"
-version = "0.1.0"
-dependencies = [
- "chacha20poly1305",
- "ed25519-dalek",
- "hkdf",
- "lockdown",
- "plist",
- "rand",
- "rsd",
- "rustls",
- "rustls-pemfile",
- "serde",
- "serde_json",
- "sha2",
- "smoltcp",
- "srp",
- "thiserror",
- "usbmux",
- "x25519-dalek",
-]
-
-[[package]]
 name = "typenum"
 version = "1.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1266,36 +1234,6 @@ name = "untrusted"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
-
-[[package]]
-name = "usbmux"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "thiserror",
- "usbmux-proto",
- "usbmux-sim",
-]
-
-[[package]]
-name = "usbmux-proto"
-version = "0.1.0"
-dependencies = [
- "plist",
- "serde",
- "serde_bytes",
- "thiserror",
-]
-
-[[package]]
-name = "usbmux-sim"
-version = "0.1.0"
-dependencies = [
- "plist",
- "serde",
- "thiserror",
- "usbmux",
-]
 
 [[package]]
 name = "utf8parse"
@@ -1450,13 +1388,6 @@ dependencies = [
  "rand_core",
  "serde",
  "zeroize",
-]
-
-[[package]]
-name = "xpc-proto"
-version = "0.1.0"
-dependencies = [
- "thiserror",
 ]
 
 [[package]]

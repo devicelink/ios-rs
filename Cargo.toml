@@ -1,48 +1,53 @@
 [workspace]
-members = [
-    "crates/usbmux-proto",
-    "crates/usbmux",
-    "crates/usbmux-sim",
-    "crates/lockdown",
-    "crates/xpc-proto",
-    "crates/remotexpc",
-    "crates/rsd",
-    "crates/tunnel",
-    "crates/ios",
-]
+members  = ["ios"]
 resolver = "2"
 
-[workspace.package]
-edition = "2021"
+[package]
+name    = "ios-rs"
 version = "0.1.0"
-authors  = ["Andreas Lüdeke"]
-license  = "MIT"
+edition = "2021"
+authors = ["Andreas Lüdeke"]
+license = "MIT"
 
-[workspace.dependencies]
-usbmux-proto = { path = "crates/usbmux-proto" }
-usbmux       = { path = "crates/usbmux" }
-usbmux-sim   = { path = "crates/usbmux-sim" }
-lockdown     = { path = "crates/lockdown" }
-xpc-proto    = { path = "crates/xpc-proto" }
-remotexpc    = { path = "crates/remotexpc" }
-rsd          = { path = "crates/rsd" }
-tunnel       = { path = "crates/tunnel" }
+[lib]
+name = "ios_rs"
+path = "src/lib.rs"
 
+[features]
+default  = ["tunnel"]
+sim      = []
+lockdown = ["dep:rustls", "dep:rustls-pemfile"]
+tunnel   = [
+    "lockdown",
+    "dep:smoltcp",
+    "dep:x25519-dalek",
+    "dep:ed25519-dalek",
+    "dep:hkdf",
+    "dep:sha2",
+    "dep:chacha20poly1305",
+    "dep:srp",
+    "dep:rand",
+    "dep:serde_json",
+]
+
+[dependencies]
 plist        = "1"
 serde        = { version = "1", features = ["derive"] }
 serde_bytes  = "0.11"
-serde_json   = "1"
+serde_json   = { version = "1", optional = true }
 thiserror    = "2"
-anyhow       = "1"
-clap         = { version = "4", features = ["derive"] }
-comfy-table  = "7"
-rustls           = { version = "0.23", features = ["tls12"] }
-rustls-pemfile   = "2"
-x25519-dalek     = { version = "2", features = ["static_secrets"] }
-ed25519-dalek    = { version = "2", features = ["rand_core"] }
-hkdf             = "0.12"
-sha2             = "0.10"
-chacha20poly1305 = "0.10"
-srp              = "0.6"
-rand             = "0.8"
-smoltcp          = { version = "0.11", default-features = false, features = ["socket-tcp", "proto-ipv6", "medium-ip", "alloc"] }
+
+rustls           = { version = "0.23", features = ["tls12"], optional = true }
+rustls-pemfile   = { version = "2", optional = true }
+
+smoltcp          = { version = "0.11", default-features = false, features = ["socket-tcp", "proto-ipv6", "medium-ip", "alloc"], optional = true }
+x25519-dalek     = { version = "2", features = ["static_secrets"], optional = true }
+ed25519-dalek    = { version = "2", features = ["rand_core"], optional = true }
+hkdf             = { version = "0.12", optional = true }
+sha2             = { version = "0.10", optional = true }
+chacha20poly1305 = { version = "0.10", optional = true }
+srp              = { version = "0.6", optional = true }
+rand             = { version = "0.8", optional = true }
+
+[dev-dependencies]
+anyhow = "1"
