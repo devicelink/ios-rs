@@ -1,0 +1,8 @@
+[package]
+name    = "remotexpc"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+xpc-proto = { workspace = true }
+thiserror = { workspace = true }

@@ -1,0 +1,23 @@
+[package]
+name    = "tunnel"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+usbmux           = { workspace = true }
+lockdown         = { workspace = true }
+rsd              = { workspace = true }
+serde            = { workspace = true }
+serde_json       = { workspace = true }
+plist            = { workspace = true }
+thiserror        = { workspace = true }
+x25519-dalek     = { workspace = true }
+ed25519-dalek    = { workspace = true }
+hkdf             = { workspace = true }
+sha2             = { workspace = true }
+chacha20poly1305 = { workspace = true }
+srp              = { workspace = true }
+rand             = { workspace = true }
+rustls           = { workspace = true }
+rustls-pemfile   = { workspace = true }
+smoltcp          = { workspace = true }
