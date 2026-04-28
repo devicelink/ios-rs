@@ -1,0 +1,10 @@
+[package]
+name    = "usbmux-proto"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+plist       = { workspace = true }
+serde       = { workspace = true }
+serde_bytes = { workspace = true }
+thiserror   = { workspace = true }
