@@ -70,7 +70,7 @@ impl RemotePairingRecord {
     }
 
     /// Build a fresh identity (no prior pairing for this device).
-    pub fn new_identity(udid: &str) -> Self {
+    pub fn new_identity(_udid: &str) -> Self {
         let sk    = SigningKey::generate(&mut OsRng);
         let ident = uuid::Uuid::new_v4().to_string().to_uppercase();
         RemotePairingRecord {
@@ -119,10 +119,10 @@ mod uuid {
         }
     }
     pub struct UuidV4([u8; 16]);
-    impl UuidV4 {
-        pub fn to_string(&self) -> String {
+    impl std::fmt::Display for UuidV4 {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             let b = &self.0;
-            format!(
+            write!(f,
                 "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
                 b[0],b[1],b[2],b[3], b[4],b[5], b[6],b[7], b[8],b[9],
                 b[10],b[11],b[12],b[13],b[14],b[15]
@@ -130,3 +130,4 @@ mod uuid {
         }
     }
 }
+

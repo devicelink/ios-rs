@@ -36,9 +36,8 @@ impl MuxSocket {
         #[cfg(unix)]
         {
             // macOS and Linux default
-            match UnixStream::connect("/var/run/usbmuxd") {
-                Ok(s) => return Ok(MuxSocket::Unix(s)),
-                Err(_) => {}
+            if let Ok(s) = UnixStream::connect("/var/run/usbmuxd") {
+                return Ok(MuxSocket::Unix(s));
             }
             // Homebrew usbmuxd path
             if let Ok(s) = UnixStream::connect("/tmp/usbmuxd") {

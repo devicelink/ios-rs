@@ -42,10 +42,9 @@ impl SmoltcpTunnel {
             .map_err(|e| Error::Protocol(format!("clone stream: {e}")))?;
         let reader_thread = thread::Builder::new()
             .name("cdtunnel-reader".into())
-            .spawn(move || loop {
-                match recv_ipv6(&mut reader_s) {
-                    Ok(pkt) => rx_q.lock().unwrap().push_back(pkt),
-                    Err(_)  => break,
+            .spawn(move || {
+                while let Ok(pkt) = recv_ipv6(&mut reader_s) {
+                    rx_q.lock().unwrap().push_back(pkt);
                 }
             })
             .map_err(|e| Error::Protocol(format!("reader thread: {e}")))?;
@@ -100,7 +99,7 @@ impl SmoltcpTunnel {
         result_rx
             .recv()
             .map_err(|_| Error::Protocol("smoltcp poll thread gone".into()))?
-            .map_err(|e| Error::Protocol(e))
+            .map_err(Error::Protocol)
     }
 }
 

@@ -136,6 +136,7 @@ pub struct Listener {
 
 impl Listener {
     /// Block until the next device attach or detach event.
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Result<Event, Error> {
         loop {
             match self.inner.next_event()? {
