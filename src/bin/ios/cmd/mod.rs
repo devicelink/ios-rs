@@ -3,6 +3,7 @@ pub mod devices;
 pub mod info;
 pub mod relay;
 pub mod rsd;
+pub mod runtest;
 pub mod services;
 pub mod version;
 pub mod watch;

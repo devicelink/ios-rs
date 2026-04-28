@@ -6,3 +6,7 @@ pub mod rsd;
 pub mod lockdown;
 #[cfg(feature = "tunnel")]
 pub mod tunnel;
+#[cfg(feature = "xctest")]
+pub mod dtx;
+#[cfg(feature = "xctest")]
+pub mod xctest;
