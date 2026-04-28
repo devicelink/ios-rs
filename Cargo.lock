@@ -577,22 +577,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "ios"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "comfy-table",
- "ios-rs",
- "plist",
-]
-
-[[package]]
 name = "ios-rs"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "chacha20poly1305",
+ "clap",
+ "comfy-table",
  "ed25519-dalek",
  "hkdf",
  "plist",
