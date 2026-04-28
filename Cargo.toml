@@ -16,7 +16,8 @@ required-features = ["cli"]
 
 [features]
 default  = ["tunnel", "cli"]
-cli      = ["tunnel", "dep:clap", "dep:comfy-table", "dep:anyhow"]
+cli      = ["tunnel", "xctest", "dep:clap", "dep:comfy-table", "dep:anyhow"]
+xctest   = ["tunnel"]
 sim      = []
 lockdown = ["dep:rustls", "dep:rustls-pemfile"]
 tunnel   = [
