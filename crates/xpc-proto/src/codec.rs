@@ -227,7 +227,7 @@ fn encode_value(val: &Value, out: &mut Vec<u8>) {
             out.extend_from_slice(&TYPE_DATA.to_le_bytes());
             out.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
             out.extend_from_slice(bytes);
-            out.extend(std::iter::repeat(0u8).take(pad));
+            out.extend(std::iter::repeat_n(0u8, pad));
         }
         Value::String(s) => {
             let len = s.len() + 1; // includes NUL
@@ -236,7 +236,7 @@ fn encode_value(val: &Value, out: &mut Vec<u8>) {
             out.extend_from_slice(&(len as u32).to_le_bytes());
             out.extend_from_slice(s.as_bytes());
             out.push(0); // NUL
-            out.extend(std::iter::repeat(0u8).take(pad));
+            out.extend(std::iter::repeat_n(0u8, pad));
         }
         Value::Uuid(u) => {
             out.extend_from_slice(&TYPE_UUID.to_le_bytes());
@@ -279,7 +279,7 @@ fn encode_dict_key(key: &str, out: &mut Vec<u8>) {
     let pad = pad4(len) - len;
     out.extend_from_slice(key.as_bytes());
     out.push(0);
-    out.extend(std::iter::repeat(0u8).take(pad));
+    out.extend(std::iter::repeat_n(0u8, pad));
 }
 
 // ── tests ────────────────────────────────────────────────────────────────────

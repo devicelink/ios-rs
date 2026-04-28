@@ -101,6 +101,7 @@ pub fn attached_plist(device_id: u32, serial: &str, connection_type: &str, produ
 }
 
 /// Build a `Detached` event plist.
+#[allow(dead_code)]
 pub fn detached_plist(device_id: u32) -> Vec<u8> {
     let mut d = plist::Dictionary::new();
     d.insert("DeviceID".into(),    plist::Value::Integer((device_id as i64).into()));

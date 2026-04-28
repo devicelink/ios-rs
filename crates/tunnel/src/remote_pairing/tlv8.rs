@@ -15,6 +15,7 @@ pub const ENCRYPTED_DATA: u8 = 0x05;
 pub const STATE:          u8 = 0x06;
 pub const ERROR:          u8 = 0x07;
 pub const SIGNATURE:      u8 = 0x0a;
+#[allow(dead_code)]
 pub const INFO:           u8 = 0x11;
 
 // ── encode ────────────────────────────────────────────────────────────────────

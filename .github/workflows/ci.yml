@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  build-and-test:
+    name: Build & test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build workspace
+        run: cargo build --workspace --locked
+
+      - name: Unit tests
+        run: cargo test --workspace --lib --locked
+
+      - name: Integration tests (usbmux simulator)
+        run: cargo test -p usbmux --test integration --locked
+        # device.rs and device_paired.rs require a physical iOS device — skip in CI
+
+      - name: Clippy
+        run: cargo clippy --workspace --locked -- -D warnings
