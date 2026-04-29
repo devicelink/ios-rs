@@ -1,0 +1,44 @@
+name: ios-rs-helper
+options:
+  bundleIdPrefix: it.luedeke.devicelink
+  deploymentTarget:
+    iOS: "17.0"
+  xcodeVersion: "15"
+  groupSortPosition: top
+
+targets:
+  ios-rs-helper:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: it.luedeke.devicelink.ios-rs-helper
+        INFOPLIST_FILE: App/Info.plist
+        SWIFT_VERSION: "5.9"
+        ENABLE_PREVIEWS: "NO"
+
+  ios-rs-helperUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: OrientationHelperUITests
+    dependencies:
+      - target: ios-rs-helper
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: it.luedeke.devicelink.ios-rs-helper.xctrunner
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/ios-rs-helper.app/ios-rs-helper
+        BUNDLE_LOADER: $(TEST_HOST)
+        SWIFT_VERSION: "5.9"
+
+schemes:
+  ios-rs-helper:
+    build:
+      targets:
+        ios-rs-helper: all
+        ios-rs-helperUITests: [test]
+    test:
+      targets:
+        - ios-rs-helperUITests

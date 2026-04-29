@@ -43,7 +43,7 @@
 ///   ios orientation get
 ///   ios orientation set portrait  [--bundle-id=<app_under_test>]
 ///                                  --runner-bundle-id=<com.example.OrientationHelper.xctrunner>
-///                                  --xctest-config=OrientationHelper.xctest
+///                                  --xctest-config=ios-rs-helperUITests.xctest
 use anyhow::{bail, Result};
 use ios_rs::lockdown::services::{Orientation, SpringBoardClient};
 use ios_rs::tunnel::ConnectionMode;
