@@ -298,6 +298,28 @@ impl LockdownSession {
         }
     }
 
+    /// Set a lockdownd value, optionally scoped to a domain.
+    /// Pass `domain: None` to write to the root domain.
+    pub fn set_value(&mut self, domain: Option<&str>, key: &str, value: Value) -> Result<(), Error> {
+        #[derive(serde::Serialize)]
+        #[serde(rename_all = "PascalCase")]
+        struct SetValueRequest<'a> {
+            request: &'a str,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            domain:  Option<&'a str>,
+            key:     &'a str,
+            value:   plist::Value,
+            label:   &'a str,
+        }
+        let req = SetValueRequest { request: "SetValue", domain, key, value, label: "devicelink" };
+        send_plist(&mut self.stream, &req)?;
+        let resp = self.expect_response()?;
+        if let Some(e) = resp.error {
+            return Err(Error::Lockdown(format!("SetValue({key}): {e}")));
+        }
+        Ok(())
+    }
+
     pub fn get_value(&mut self, domain: Option<&str>, key: &str) -> Result<Value, Error> {
         let req = Request {
             request: "GetValue",
