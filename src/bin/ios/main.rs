@@ -58,6 +58,12 @@ enum Cmd {
         action: AppsAction,
     },
 
+    /// Get or set screen orientation (set requires pre-installed OrientationHelper XCTest)
+    Orientation {
+        #[command(subcommand)]
+        action: OrientationAction,
+    },
+
     /// Get or set device language and locale
     Lang {
         /// Set language (e.g. "en", "de", "zh-Hans")
@@ -147,6 +153,31 @@ enum AppsAction {
     },
 }
 
+#[derive(Subcommand)]
+enum OrientationAction {
+    /// Read current screen orientation from SpringBoard
+    Get {
+        #[arg(long)]
+        udid: Option<String>,
+    },
+    /// Set screen orientation via a short-lived XCUITest (see `ios orientation set --help`)
+    Set {
+        /// Target orientation: portrait, portrait_upside_down, landscape_left, landscape_right
+        direction: String,
+        /// Bundle ID of the app under test (leave empty for unit tests)
+        #[arg(long)]
+        bundle_id: Option<String>,
+        /// Test runner bundle ID (default: com.devicelink.OrientationHelper.xctrunner)
+        #[arg(long, default_value = "com.devicelink.OrientationHelper.xctrunner")]
+        runner_bundle_id: String,
+        /// XCTest config name (default: OrientationHelper.xctest)
+        #[arg(long, default_value = "OrientationHelper.xctest")]
+        xctest_config: String,
+        #[arg(long)]
+        udid: Option<String>,
+    },
+}
+
 fn main() -> Result<()> {
     let cli  = Cli::parse();
     let mode = ConnectionMode::from_env().with_legacy_flag(cli.legacy);
@@ -158,6 +189,15 @@ fn main() -> Result<()> {
         Cmd::Relay { port, listen, udid } => cmd::relay::run(udid.as_deref(), port, listen),
         Cmd::Watch            => cmd::watch::run(),
         Cmd::Version { udid } => cmd::version::run(udid.as_deref()),
+        Cmd::Orientation { action } => match action {
+            OrientationAction::Get { udid } =>
+                cmd::orientation::get(udid.as_deref(), mode),
+            OrientationAction::Set { direction, bundle_id, runner_bundle_id, xctest_config, udid } =>
+                cmd::orientation::set(
+                    udid.as_deref(), &direction,
+                    bundle_id.as_deref(), &runner_bundle_id, &xctest_config,
+                ),
+        },
         Cmd::Lang { set_lang, set_locale, udid } =>
             cmd::lang::run(udid.as_deref(), set_lang.as_deref(), set_locale.as_deref(), mode),
         Cmd::Date { timezone, sync, udid } =>
