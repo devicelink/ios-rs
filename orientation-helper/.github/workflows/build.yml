@@ -1,0 +1,72 @@
+name: Build ios-rs-helper
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "orientation-helper/**"
+  pull_request:
+    paths:
+      - "orientation-helper/**"
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build test runner IPA
+    runs-on: macos-15
+
+    defaults:
+      run:
+        working-directory: orientation-helper
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.app/Contents/Developer
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+          working-directory: orientation-helper
+
+      # ── Signed build (requires secrets) ────────────────────────────────────
+      # Set these repository secrets to enable signed builds:
+      #   MATCH_GIT_BASIC_AUTHORIZATION  base64(user:token) for the match repo
+      #   MATCH_PASSWORD                 encryption passphrase
+      #   MATCH_GIT_URL                  git repo URL containing certs/profiles
+      #
+      - name: Sync certificates (match)
+        if: ${{ env.MATCH_GIT_URL != '' }}
+        env:
+          MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
+        run: bundle exec fastlane certs
+
+      - name: Build signed IPA
+        if: ${{ env.MATCH_GIT_URL != '' }}
+        env:
+          MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
+        run: bundle exec fastlane build
+
+      # ── Unsigned build (no secrets needed) ─────────────────────────────────
+      - name: Build unsigned IPA
+        if: ${{ env.MATCH_GIT_URL == '' }}
+        env:
+          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
+        run: bundle exec fastlane build_unsigned
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-rs-helper-ipa
+          path: |
+            orientation-helper/build/ios-rs-helper.ipa
+            orientation-helper/build/ios-rs-helper-unsigned.ipa
+          if-no-files-found: warn
+          retention-days: 30

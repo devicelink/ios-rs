@@ -167,11 +167,11 @@ enum OrientationAction {
         /// Bundle ID of the app under test (leave empty for unit tests)
         #[arg(long)]
         bundle_id: Option<String>,
-        /// Test runner bundle ID (default: com.devicelink.OrientationHelper.xctrunner)
-        #[arg(long, default_value = "com.devicelink.OrientationHelper.xctrunner")]
+        /// Test runner bundle ID (default: it.luedeke.devicelink.ios-rs-helper.xctrunner)
+        #[arg(long, default_value = "it.luedeke.devicelink.ios-rs-helper.xctrunner")]
         runner_bundle_id: String,
-        /// XCTest config name (default: OrientationHelper.xctest)
-        #[arg(long, default_value = "OrientationHelper.xctest")]
+        /// XCTest config name (default: ios-rs-helperUITests.xctest)
+        #[arg(long, default_value = "ios-rs-helperUITests.xctest")]
         xctest_config: String,
         #[arg(long)]
         udid: Option<String>,

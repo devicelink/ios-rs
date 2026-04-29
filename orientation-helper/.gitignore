@@ -1,0 +1,9 @@
+ios-rs-helper.xcodeproj/
+ios-rs-helper.xcworkspace/
+build/
+.bundle/
+vendor/bundle/
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/
+fastlane/test_output/

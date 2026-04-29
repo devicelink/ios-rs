@@ -1,0 +1,84 @@
+default_platform(:ios)
+
+SCHEME      = "ios-rs-helper"
+BUNDLE_ID   = "it.luedeke.devicelink.ios-rs-helper"
+OUTPUT_DIR  = "build"
+
+platform :ios do
+
+  desc "Generate Xcode project and build the test runner IPA"
+  lane :build do
+    # Regenerate the Xcode project from the xcodegen spec every time so the
+    # project file is never checked into git.
+    sh("bundle exec xcodegen generate --spec ../project.yml",
+       log: true)
+
+    # Build the host app + UI test runner for a real device.
+    # The resulting .xctrunner app is packaged into an IPA and placed in
+    # #{OUTPUT_DIR}/ios-rs-helper.ipa.
+    build_app(
+      scheme:              SCHEME,
+      configuration:       "Release",
+      export_method:       "development",
+      output_directory:    OUTPUT_DIR,
+      output_name:         "ios-rs-helper.ipa",
+      clean:               true,
+      skip_profile_detection: false,
+      export_options: {
+        compileBitcode:        false,
+        provisioningProfiles:  {}   # populated by match or manual signing
+      }
+    )
+  end
+
+  desc "Match — sync development certificates and provisioning profiles"
+  lane :certs do
+    match(
+      type:          "development",
+      app_identifier: [BUNDLE_ID, "#{BUNDLE_ID}.xctrunner"],
+      readonly:      is_ci
+    )
+  end
+
+  desc "Full CI pipeline: certs → build"
+  lane :ci do
+    certs
+    build
+  end
+
+  # ── helper: package the raw .xctrunner into an IPA without Xcode signing ──
+  # Use this when you want to sign the runner yourself (e.g. with ios-deploy).
+  desc "Build unsigned xctest runner (no code signing required)"
+  lane :build_unsigned do
+    sh("bundle exec xcodegen generate --spec ../project.yml")
+
+    sh(%(
+      xcodebuild \
+        -scheme "#{SCHEME}" \
+        -sdk iphoneos \
+        -configuration Release \
+        -destination "generic/platform=iOS" \
+        build-for-testing \
+        DERIVED_DATA_PATH="#{OUTPUT_DIR}/DerivedData" \
+        CODE_SIGNING_ALLOWED=NO \
+        CODE_SIGN_STYLE=Manual \
+        CODE_SIGN_IDENTITY="" \
+        | xcpretty
+    ))
+
+    runner_glob = "#{OUTPUT_DIR}/DerivedData/Build/Products/Release-iphoneos/*-Runner.app"
+    runner_app  = Dir.glob(runner_glob).first
+    UI.user_error!("Runner .app not found at #{runner_glob}") unless runner_app
+
+    payload_dir = "#{OUTPUT_DIR}/Payload"
+    sh("rm -rf '#{payload_dir}' && mkdir -p '#{payload_dir}'")
+    sh("cp -r '#{runner_app}' '#{payload_dir}/'")
+    sh("cd '#{OUTPUT_DIR}' && zip -qr ios-rs-helper-unsigned.ipa Payload/")
+    sh("rm -rf '#{payload_dir}'")
+
+    UI.success("Unsigned IPA: #{OUTPUT_DIR}/ios-rs-helper-unsigned.ipa")
+    UI.message("Sign it with: codesign --force -s '<Dev Certificate>' #{OUTPUT_DIR}/Payload/*.app")
+    UI.message("Then install: ios apps install #{OUTPUT_DIR}/ios-rs-helper-unsigned.ipa")
+  end
+
+end
