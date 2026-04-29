@@ -58,6 +58,30 @@ enum Cmd {
         action: AppsAction,
     },
 
+    /// Get or set device language and locale
+    Lang {
+        /// Set language (e.g. "en", "de", "zh-Hans")
+        #[arg(long = "setlang")]
+        set_lang: Option<String>,
+        /// Set locale (e.g. "en_US", "de_DE")
+        #[arg(long = "setlocale")]
+        set_locale: Option<String>,
+        #[arg(long)]
+        udid: Option<String>,
+    },
+
+    /// Get or set device timezone and clock
+    Date {
+        /// Set timezone (e.g. "America/New_York", "Europe/Berlin")
+        #[arg(long = "settz")]
+        timezone: Option<String>,
+        /// Sync device clock to host time
+        #[arg(long)]
+        sync: bool,
+        #[arg(long)]
+        udid: Option<String>,
+    },
+
     /// Show RSD service catalogue via CDTunnel (iOS 17.4+)
     Rsd {
         #[arg(long)]
@@ -134,6 +158,10 @@ fn main() -> Result<()> {
         Cmd::Relay { port, listen, udid } => cmd::relay::run(udid.as_deref(), port, listen),
         Cmd::Watch            => cmd::watch::run(),
         Cmd::Version { udid } => cmd::version::run(udid.as_deref()),
+        Cmd::Lang { set_lang, set_locale, udid } =>
+            cmd::lang::run(udid.as_deref(), set_lang.as_deref(), set_locale.as_deref(), mode),
+        Cmd::Date { timezone, sync, udid } =>
+            cmd::timezone::run(udid.as_deref(), timezone.as_deref(), sync, mode),
         Cmd::Rsd { udid }     => cmd::rsd::run(udid.as_deref()),
         Cmd::Runtest { bundle_id, test_runner_bundle_id, xctest_config,
                        tests_to_run, tests_to_skip, xctest, env, udid } =>

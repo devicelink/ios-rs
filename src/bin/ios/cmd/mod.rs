@@ -1,5 +1,7 @@
 pub mod apps;
 pub mod devices;
+pub mod lang;
+pub mod timezone;
 pub mod info;
 pub mod relay;
 pub mod rsd;
