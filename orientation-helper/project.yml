@@ -18,6 +18,8 @@ targets:
         INFOPLIST_FILE: App/Info.plist
         SWIFT_VERSION: "5.9"
         ENABLE_PREVIEWS: "NO"
+        DEVELOPMENT_TEAM: RUJR5DY35F
+        CODE_SIGN_STYLE: Automatic
 
   ios-rs-helperUITests:
     type: bundle.ui-testing
@@ -28,10 +30,11 @@ targets:
       - target: ios-rs-helper
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: it.luedeke.devicelink.ios-rs-helper.xctrunner
-        TEST_HOST: $(BUILT_PRODUCTS_DIR)/ios-rs-helper.app/ios-rs-helper
-        BUNDLE_LOADER: $(TEST_HOST)
+        PRODUCT_BUNDLE_IDENTIFIER: it.luedeke.devicelink.ios-rs-helper
         SWIFT_VERSION: "5.9"
+        GENERATE_INFOPLIST_FILE: "YES"
+        DEVELOPMENT_TEAM: RUJR5DY35F
+        CODE_SIGN_STYLE: Automatic
 
 schemes:
   ios-rs-helper:

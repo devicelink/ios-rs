@@ -37,6 +37,7 @@ use std::collections::HashMap;
 use std::io::{BufWriter, Read, Write};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
+use std::time::Duration;
 
 use thiserror::Error;
 
@@ -118,8 +119,23 @@ pub fn encode_call(
 }
 
 /// Encode an ACK reply to an incoming message.
+/// go-ios ACK format: 32-byte header (messageLength=16) + 16-byte empty payload header.
 pub fn encode_ack(msg: &DtxMessage) -> Vec<u8> {
-    encode_raw(msg.msg_id, msg.conv_id + 1, msg.channel, false, MsgType::Ack, &[], &[])
+    let mut buf = vec![0u8; 48];
+    // Header (32 bytes) — magic big-endian, rest little-endian
+    buf[0..4].copy_from_slice(&MAGIC);
+    buf[4..8].copy_from_slice(&32u32.to_le_bytes());
+    buf[8..10].copy_from_slice(&0u16.to_le_bytes());   // fragment_index
+    buf[10..12].copy_from_slice(&1u16.to_le_bytes());  // fragment_count
+    buf[12..16].copy_from_slice(&16u32.to_le_bytes()); // message_length = 16 (payload header only)
+    buf[16..20].copy_from_slice(&msg.msg_id.to_le_bytes());
+    buf[20..24].copy_from_slice(&(msg.conv_id + 1).to_le_bytes());
+    buf[24..28].copy_from_slice(&(msg.channel as u32).to_le_bytes());
+    buf[28..32].copy_from_slice(&0u32.to_le_bytes()); // expects_reply = false
+    // Payload header (16 bytes) — message_type=Ack, everything else 0
+    buf[32..36].copy_from_slice(&(MsgType::Ack as u32).to_le_bytes());
+    // bytes 36..48 stay zero
+    buf
 }
 
 /// Encode a reply with a plist payload.
@@ -225,6 +241,56 @@ pub fn archive_u64(n: u64) -> Vec<u8> {
 
 pub fn archive_bool(b: bool) -> Vec<u8> {
     archive_primitive(plist::Value::Boolean(b))
+}
+
+/// NSKeyedArchive the minimal capabilities dict expected by testmanagerd:
+/// `{"com.apple.private.DTXBlockCompression": 0, "com.apple.private.DTXConnection": 1}`
+pub fn archive_capabilities_dict() -> Vec<u8> {
+    let mut objects: Vec<plist::Value> = vec![plist::Value::String("$null".into())];
+
+    let class_uid = plist::Uid::new(objects.len() as u64);
+    objects.push(plist::Value::Dictionary({
+        let mut d = plist::Dictionary::new();
+        d.insert("$classname".into(), plist::Value::String("NSDictionary".into()));
+        d.insert("$classes".into(), plist::Value::Array(vec![
+            plist::Value::String("NSDictionary".into()),
+            plist::Value::String("NSObject".into()),
+        ]));
+        d
+    }));
+
+    let k1_uid = plist::Uid::new(objects.len() as u64);
+    objects.push(plist::Value::String("com.apple.private.DTXBlockCompression".into()));
+    let k2_uid = plist::Uid::new(objects.len() as u64);
+    objects.push(plist::Value::String("com.apple.private.DTXConnection".into()));
+    let v1_uid = plist::Uid::new(objects.len() as u64);
+    objects.push(plist::Value::Integer(0.into()));
+    let v2_uid = plist::Uid::new(objects.len() as u64);
+    objects.push(plist::Value::Integer(1.into()));
+
+    let dict_uid = plist::Uid::new(objects.len() as u64);
+    objects.push(plist::Value::Dictionary({
+        let mut d = plist::Dictionary::new();
+        d.insert("NS.keys".into(), plist::Value::Array(vec![
+            plist::Value::Uid(k1_uid), plist::Value::Uid(k2_uid),
+        ]));
+        d.insert("NS.objects".into(), plist::Value::Array(vec![
+            plist::Value::Uid(v1_uid), plist::Value::Uid(v2_uid),
+        ]));
+        d.insert("$class".into(), plist::Value::Uid(class_uid));
+        d
+    }));
+
+    let mut top = plist::Dictionary::new();
+    top.insert("root".into(), plist::Value::Uid(dict_uid));
+    let mut root = plist::Dictionary::new();
+    root.insert("$version".into(),  plist::Value::Integer(100000.into()));
+    root.insert("$archiver".into(), plist::Value::String("NSKeyedArchiver".into()));
+    root.insert("$top".into(),      plist::Value::Dictionary(top));
+    root.insert("$objects".into(),  plist::Value::Array(objects));
+    let mut buf = Vec::new();
+    plist::to_writer_binary(&mut buf, &plist::Value::Dictionary(root)).unwrap();
+    buf
 }
 
 // ── decoding ──────────────────────────────────────────────────────────────────
@@ -336,11 +402,13 @@ type DispatchMap = Arc<Mutex<HashMap<i32, mpsc::SyncSender<DtxMessage>>>>;
 /// - replies (conv_id > 0) → forwarded to the matching `call()` waiter
 /// - incoming method invocations → forwarded to the channel's dispatch queue
 pub struct DtxConn {
-    writer:     Arc<Mutex<BufWriter<Box<dyn Write + Send>>>>,
-    next_id:    Arc<Mutex<u32>>,
-    waiters:    WaiterMap,
-    dispatchers: DispatchMap,
-    _reader:    thread::JoinHandle<()>,
+    writer:       Arc<Mutex<BufWriter<Box<dyn Write + Send>>>>,
+    next_id:      Arc<Mutex<u32>>,
+    next_chan:    Arc<Mutex<i32>>,
+    waiters:      WaiterMap,
+    dispatchers:  DispatchMap,
+    _reader:      thread::JoinHandle<()>,
+    timeout:      Duration,
 }
 
 impl DtxConn {
@@ -361,7 +429,7 @@ impl DtxConn {
             .spawn(move || reader_loop(reader, w2, wt, dt))
             .expect("dtx reader thread");
 
-        DtxConn { writer: w, next_id: Arc::new(Mutex::new(1)), waiters, dispatchers, _reader: handle }
+        DtxConn { writer: w, next_id: Arc::new(Mutex::new(1)), next_chan: Arc::new(Mutex::new(1)), waiters, dispatchers, _reader: handle, timeout: Duration::from_secs(10) }
     }
 
     /// Send a method call and wait for the reply. Returns the reply's payload.
@@ -378,7 +446,12 @@ impl DtxConn {
         let frame = encode_call(id, 0, channel, true, selector, aux);
         self.write_bytes(&frame)?;
 
-        rx.recv().map_err(|_| Error::Closed).map(|m| m.payload)
+        rx.recv_timeout(self.timeout)
+            .map_err(|e| match e {
+                mpsc::RecvTimeoutError::Timeout      => Error::Protocol(format!("DTX call '{selector}' timed out")),
+                mpsc::RecvTimeoutError::Disconnected => Error::Closed,
+            })
+            .map(|m| m.payload)
     }
 
     /// Send a method call without waiting for a reply.
@@ -388,19 +461,35 @@ impl DtxConn {
         self.write_bytes(&frame)
     }
 
+    /// Perform the DTX capability handshake required by testmanagerd.
+    ///
+    /// Must be called once per connection before any `request_channel` call.
+    /// Sends `_notifyOfPublishedCapabilities:` (no reply expected) with the
+    /// minimal capabilities dict observed in both pymd3 and go-ios.
+    pub fn handshake(&self) -> Result<(), Error> {
+        let caps = archive_capabilities_dict();
+        self.call_async(0, "_notifyOfPublishedCapabilities:", &[AuxValue::Bytes(caps)])
+    }
+
     /// Request a named DTX channel. Returns the channel code to use in subsequent calls.
+    ///
+    /// Per go-ios: ALL method call arguments must be NSKeyedArchiver-encoded (t_bytearray),
+    /// including primitive integers. The channel code is allocated locally and the server
+    /// echoes it back; we return the locally-allocated code, not the echo.
     pub fn request_channel(&self, identifier: &str) -> Result<i32, Error> {
-        let code: i32 = 1;
+        let code = {
+            let mut c = self.next_chan.lock().unwrap();
+            let v = *c;
+            *c += 1;
+            v
+        };
         let aux = vec![
+            // Channel code sent as raw PInt32 (pymd3 convention)
             AuxValue::Int32(code),
             AuxValue::Bytes(archive_string(identifier)),
         ];
-        let reply = self.call(0, "_requestChannelWithCode:identifier:", &aux)?;
-        // Response is a plist integer with the allocated channel code
-        match reply.as_ref().and_then(|v| v.as_signed_integer()) {
-            Some(n) => Ok(n as i32),
-            None    => Err(Error::Protocol(format!("_requestChannelWithCode: bad reply: {reply:?}"))),
-        }
+        self.call(0, "_requestChannelWithCode:identifier:", &aux)?;
+        Ok(code)
     }
 
     /// Register a channel to receive incoming method calls.

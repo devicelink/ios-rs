@@ -187,7 +187,13 @@ pub fn run(
 
     let chan_name = "dtxproxy:XCTestManager_IDEInterface:XCTestManager_DaemonConnectionInterface";
 
-    // ── 4. conn1: request IDE channel + initiate session ────────────────────
+    // ── 4. conn1 + conn2: capability handshake (required by testmanagerd) ───
+    // testmanagerd ignores _requestChannelWithCode:identifier: until the host
+    // sends _notifyOfPublishedCapabilities: — both pymd3 and go-ios do this.
+    conn1.handshake().map_err(|e| err(format!("conn1 handshake: {e}")))?;
+    conn2.handshake().map_err(|e| err(format!("conn2 handshake: {e}")))?;
+
+    // ── 5. conn1: request IDE channel + initiate session ────────────────────
     let ide_chan1 = conn1.request_channel(chan_name)
         .map_err(|e| err(format!("request channel conn1: {e}")))?;
 
@@ -287,23 +293,20 @@ pub fn run(
         &[ AuxValue::Bytes(dtx::archive_u64(36)) ])
     .map_err(|e| err(format!("startExecutingTestPlan: {e}")))?;
 
-    // ── 8. Stream output and collect results ─────────────────────────────────
+    // ── 8. Stream output and wait for runner to exit ─────────────────────────
+    // The stdio channel disconnects when the test runner process exits.
     let passed = true;
     let timeout = Duration::from_secs(300);
     let deadline = std::time::Instant::now() + timeout;
 
     loop {
-        // Flush stdio output
-        while let Ok(data) = stdio_rx.try_recv() {
-            log_out.write_all(&data).ok();
+        match stdio_rx.try_recv() {
+            Ok(data)                                  => { log_out.write_all(&data).ok(); }
+            Err(mpsc::TryRecvError::Disconnected)     => break, // runner exited
+            Err(mpsc::TryRecvError::Empty)            => {}
         }
-
         if std::time::Instant::now() > deadline { break; }
-        thread::sleep(Duration::from_millis(100));
-
-        // Check if both DTX connections are still alive by trying a dummy read
-        // (In a real implementation we'd track test completion via DTX events)
-        // For now, rely on the test runner exiting
+        thread::sleep(Duration::from_millis(50));
     }
 
     // Final flush

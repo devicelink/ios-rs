@@ -18,8 +18,9 @@ const OP_DATA:          u64 = 2;
 const OP_MAKE_DIR:      u64 = 9;
 const OP_FILE_OPEN:     u64 = 0x0d;
 const OP_FILE_OPEN_RES: u64 = 0x0e;
-const OP_FILE_CLOSE:    u64 = 0x0f;
-const OP_FILE_WRITE:    u64 = 0x14;
+// 0x0f = FileRefRead (not used here)
+const OP_FILE_WRITE:    u64 = 0x10;  // FileRefWrite
+const OP_FILE_CLOSE:    u64 = 0x14;  // FileRefClose
 
 // File-open mode: create or truncate for writing
 const FOPEN_WR: u64 = 4;
