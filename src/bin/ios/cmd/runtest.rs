@@ -62,11 +62,13 @@ pub fn run_test(
 
     let config = RunConfig {
         bundle_id,
+        bundle_path: "",
         test_runner_bundle_id,
         xctest_config_name: xctest_config,
         tests_to_run:       &tests_to_run,
         tests_to_skip:      &tests_to_skip,
         is_xctest,
+        initialize_for_ui:  !is_xctest,
         extra_env: env_map,
     };
 

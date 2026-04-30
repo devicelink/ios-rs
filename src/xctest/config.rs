@@ -6,14 +6,20 @@
 use plist::{Dictionary, Uid, Value};
 
 pub struct XCTestConfigArgs<'a> {
-    pub session_id:          &'a [u8; 16],
-    pub test_bundle_path:    &'a str,
-    pub product_module_name: &'a str,
-    pub target_bundle_id:    &'a str,
-    pub target_path:         &'a str,
-    pub tests_to_run:        &'a [String],
-    pub tests_to_skip:       &'a [String],
-    pub is_xctest:           bool,
+    pub session_id:              &'a [u8; 16],
+    pub test_bundle_path:        &'a str,
+    pub product_module_name:     &'a str,
+    pub target_bundle_id:        &'a str,
+    pub target_path:             &'a str,
+    pub tests_to_run:            &'a [String],
+    pub tests_to_skip:           &'a [String],
+    pub is_xctest:               bool,
+    pub initialize_for_ui:       bool,
+    /// Map of bundleID → on-device .app path for all apps involved in the test.
+    /// Xcode sets this to tell XCUITest the app landscape; prevents auto-launch.
+    pub app_dependencies:        &'a [(String, String)],
+    /// Bundle ID of the test runner app itself.
+    pub runner_bundle_id:        &'a str,
 }
 
 // Re-export for use in mod.rs
@@ -82,29 +88,72 @@ pub fn build_xctest_configuration_bytes(args: XCTestConfigArgs<'_>) -> Vec<u8> {
     let automation_path_uid = push_str(&mut objects,
         "/System/Developer/Library/PrivateFrameworks/XCTAutomationSupport.framework");
 
-    // IDECapabilities
+    // IDECapabilities — updated to match Xcode 16 exactly
     let ide_caps_uid = {
-        let caps_uid = Uid::new(objects.len() as u64);
-        let mut caps_dict = Dictionary::new();
-        for key in &[
+        // Capabilities with value 1 (bool-like)
+        let cap_keys_1 = [
             "XCTIssue capability",
             "daemon container sandbox extension",
             "delayed attachment transfer",
             "expected failure test capability",
+            "in-process test parallelization capability",
             "request diagnostics for specific devices",
+            "runner plan",
+            "skipped suite capability",
             "skipped test capability",
             "test case run configurations",
-            "test iterations",
             "test timeout capability",
+            "traits",
             "ubiquitous test identifiers",
-        ] {
-            caps_dict.insert((*key).into(), Value::Boolean(true));
+            "unified issue recorded",
+        ];
+        let true_uid = Uid::new(objects.len() as u64);
+        objects.push(Value::Integer(1.into()));
+        let two_uid = Uid::new(objects.len() as u64);
+        objects.push(Value::Integer(2.into()));
+
+        let mut key_uids = Vec::new();
+        let mut val_uids = Vec::new();
+        for k in &cap_keys_1 {
+            key_uids.push({ let u = Uid::new(objects.len() as u64); objects.push(Value::String((*k).into())); u });
+            val_uids.push(true_uid);
         }
+        // "test iterations" = 2
+        key_uids.push({ let u = Uid::new(objects.len() as u64); objects.push(Value::String("test iterations".into())); u });
+        val_uids.push(two_uid);
+
+        let nsdict_uid = Uid::new(objects.len() as u64);
+        let mut nd = Dictionary::new();
+        nd.insert("NS.keys".into(),    Value::Array(key_uids.iter().map(|u| Value::Uid(*u)).collect()));
+        nd.insert("NS.objects".into(), Value::Array(val_uids.iter().map(|u| Value::Uid(*u)).collect()));
+        nd.insert("$class".into(),     Value::Uid(nsdict_class));
+        objects.push(Value::Dictionary(nd));
+
+        let caps_uid = Uid::new(objects.len() as u64);
         let mut d = Dictionary::new();
-        d.insert("capabilities-dictionary".into(), Value::Dictionary(caps_dict));
+        d.insert("capabilities-dictionary".into(), Value::Uid(nsdict_uid));
         d.insert("$class".into(), Value::Uid(xctcaps_class));
         objects.push(Value::Dictionary(d));
         caps_uid
+    };
+
+    // testApplicationDependencies: {bundleID → appPath} dict.
+    // Xcode always sets this with all involved apps. Without it, XCUITest may
+    // auto-launch a host app trying to discover the app landscape.
+    let app_deps_uid = {
+        let mut key_uids = Vec::new();
+        let mut val_uids = Vec::new();
+        for (bid, path) in args.app_dependencies {
+            key_uids.push(push_str(&mut objects, bid));
+            val_uids.push(push_str(&mut objects, path));
+        }
+        let nd_uid = Uid::new(objects.len() as u64);
+        let mut nd = Dictionary::new();
+        nd.insert("NS.keys".into(),    Value::Array(key_uids.iter().map(|u| Value::Uid(*u)).collect()));
+        nd.insert("NS.objects".into(), Value::Array(val_uids.iter().map(|u| Value::Uid(*u)).collect()));
+        nd.insert("$class".into(),     Value::Uid(nsdict_class));
+        objects.push(Value::Dictionary(nd));
+        nd_uid
     };
 
     // Target app info (optional)
@@ -127,7 +176,7 @@ pub fn build_xctest_configuration_bytes(args: XCTestConfigArgs<'_>) -> Vec<u8> {
     cfg.insert("disablePerformanceMetrics".into(), Value::Boolean(false));
     cfg.insert("emitOSLogs".into(),                Value::Boolean(false));
     cfg.insert("gatherLocalizableStringsData".into(), Value::Boolean(false));
-    cfg.insert("initializeForUITesting".into(),    Value::Boolean(!args.is_xctest));
+    cfg.insert("initializeForUITesting".into(),    Value::Boolean(args.initialize_for_ui));
     cfg.insert("maximumTestExecutionTimeAllowance".into(), Value::Uid(Uid::new(0)));
     cfg.insert("randomExecutionOrderingSeed".into(), Value::Uid(Uid::new(0)));
     cfg.insert("reportActivities".into(),          Value::Boolean(true));
@@ -144,8 +193,9 @@ pub fn build_xctest_configuration_bytes(args: XCTestConfigArgs<'_>) -> Vec<u8> {
     cfg.insert("treatMissingBaselinesAsFailures".into(), Value::Boolean(false));
     cfg.insert("userAttachmentLifetime".into(),    Value::Integer(1.into())); // keepAlways
     cfg.insert("preferredScreenCaptureFormat".into(), Value::Integer(2.into()));
-    cfg.insert("IDECapabilities".into(),           Value::Uid(ide_caps_uid));
-    cfg.insert("productModuleName".into(),         Value::Uid(module_name_uid));
+    cfg.insert("IDECapabilities".into(),               Value::Uid(ide_caps_uid));
+    cfg.insert("productModuleName".into(),             Value::Uid(module_name_uid));
+    cfg.insert("testApplicationDependencies".into(),   Value::Uid(app_deps_uid));
 
     if tests_to_run_uid != Uid::new(0) {
         cfg.insert("testsToRun".into(), Value::Uid(tests_to_run_uid));

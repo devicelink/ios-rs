@@ -500,7 +500,13 @@ impl DtxConn {
         rx
     }
 
-    /// Send a reply to an incoming message.
+    /// Send a type=0 ACK (void return) to an incoming message.
+    pub fn ack(&self, req: &DtxMessage) -> Result<(), Error> {
+        let frame = encode_ack(req);
+        self.write_bytes(&frame)
+    }
+
+    /// Send a type=3 reply with a plist payload to an incoming message.
     pub fn reply(&self, req: &DtxMessage, payload: &[u8]) -> Result<(), Error> {
         let frame = encode_reply(req, payload);
         self.write_bytes(&frame)
@@ -533,10 +539,9 @@ fn reader_loop<R: Read>(
             Err(_) => return,
         };
 
-        // ACKs: send ack if requested, then ignore
-        if msg.msg_type == MsgType::Ack as u32 { continue; }
-
-        // Reply to a waiting call
+        // Check replies BEFORE filtering by type: the server uses type=0 (OK/void)
+        // as the reply to void-returning methods like _requestChannelWithCode:identifier:.
+        // Only drop unsolicited type=0 frames that have conv_id=0 (standalone ACKs).
         if msg.conv_id > 0 {
             if let Some(tx) = waiters.lock().unwrap().remove(&msg.msg_id) {
                 let _ = tx.send(msg);
@@ -544,9 +549,15 @@ fn reader_loop<R: Read>(
             continue;
         }
 
-        // Incoming method invocation or other — dispatch to channel handler
-        if msg.expects_reply {
-            // Send ACK immediately
+        // Unsolicited ACK (type=0, conv_id=0) — drop
+        if msg.msg_type == MsgType::Ack as u32 { continue; }
+
+        // Incoming method invocation or other — dispatch to channel handler.
+        // If there's a registered handler, let it decide the reply (it may need to
+        // send a typed reply instead of a bare ACK, e.g. for testRunnerReadyWithCapabilities:).
+        // Only auto-ACK on channels without a registered handler.
+        let has_handler = dispatchers.lock().unwrap().contains_key(&msg.channel);
+        if msg.expects_reply && !has_handler {
             let ack = encode_ack(&msg);
             if let Ok(mut w) = writer.lock() {
                 let _ = w.write_all(&ack);

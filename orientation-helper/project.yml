@@ -26,15 +26,16 @@ targets:
     platform: iOS
     sources:
       - path: OrientationHelperUITests
-    dependencies:
-      - target: ios-rs-helper
+    # No host app dependency — XCUIDevice.shared.orientation works without one.
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: it.luedeke.devicelink.ios-rs-helper
+        PRODUCT_BUNDLE_IDENTIFIER: it.luedeke.devicelink.orientationhelper
         SWIFT_VERSION: "5.9"
         GENERATE_INFOPLIST_FILE: "YES"
         DEVELOPMENT_TEAM: RUJR5DY35F
         CODE_SIGN_STYLE: Automatic
+        BUNDLE_LOADER: ""
+        TEST_HOST: ""
 
 schemes:
   ios-rs-helper:
