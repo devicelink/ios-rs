@@ -1,0 +1,24 @@
+{
+  "configurations" : [
+    {
+      "id" : "256A010E-D7A5-4998-BCDC-46AF3FF12280",
+      "name" : "Configuration 1",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "testTimeoutsEnabled" : true
+  },
+  "testTargets" : [
+    {
+      "target" : {
+        "containerPath" : "container:ios-rs-helper.xcodeproj",
+        "identifier" : "ADDB057B3A87ACF8A5467353",
+        "name" : "ios-rs-helperUITests"
+      }
+    }
+  ],
+  "version" : 1
+}

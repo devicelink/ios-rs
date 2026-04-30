@@ -56,6 +56,29 @@ impl SpringBoardClient {
         Ok(Self { stream: session.connect_service(SERVICE)? })
     }
 
+    /// Get the bundle ID of the current foreground app.
+    pub fn get_foreground_app(&mut self) -> Result<String, Error> {
+        let mut d = plist::Dictionary::new();
+        d.insert("command".into(), Value::String("getFrontMostDisplayIdentifier".into()));
+        send(&mut self.stream, &Value::Dictionary(d))?;
+        let resp = recv(&mut self.stream)?;
+        resp.as_dictionary()
+            .and_then(|d| d.get("displayIdentifier"))
+            .and_then(|v| v.as_string())
+            .map(|s| s.to_owned())
+            .ok_or_else(|| Error::Lockdown("no displayIdentifier in response".into()))
+    }
+
+    /// Set the interface orientation directly via SpringBoard (no XCUITest needed).
+    pub fn set_orientation(&mut self, o: Orientation) -> Result<(), Error> {
+        let mut d = plist::Dictionary::new();
+        d.insert("command".into(), Value::String("setInterfaceOrientation".into()));
+        d.insert("value".into(), Value::Integer((o as i64).into()));
+        send(&mut self.stream, &Value::Dictionary(d))?;
+        let _ = recv(&mut self.stream)?; // consume response
+        Ok(())
+    }
+
     /// Get the current interface orientation.
     pub fn get_orientation(&mut self) -> Result<Orientation, Error> {
         let mut d = plist::Dictionary::new();

@@ -68,12 +68,22 @@ pub fn set(
     runner_bundle_id:  &str,
     xctest_config:     &str,
 ) -> Result<()> {
-    // Validate the direction string up-front
-    Orientation::parse(direction)
+    let target = Orientation::parse(direction)
         .ok_or_else(|| anyhow::anyhow!(
             "unknown orientation '{direction}'. \
              Valid values: portrait, portrait_upside_down, landscape_left, landscape_right"
         ))?;
+
+    // Try direct SpringBoard API first — instant, no XCUITest, no host app launch.
+    {
+        let mut session = open_session(udid, ConnectionMode::Legacy)?;
+        if let Ok(mut sbs) = SpringBoardClient::connect(session.lockdown()) {
+            if sbs.set_orientation(target).is_ok() {
+                println!("Orientation set to '{direction}'.");
+                return Ok(());
+            }
+        }
+    }
 
     let mut session = open_session(udid, ConnectionMode::Rsd)?;
     if !session.is_rsd() {
@@ -104,19 +114,47 @@ pub fn set(
         }).collect::<HashMap<_, _>>()
     };
 
+    // Auto-detect the current foreground app before taking the tunnel reference.
+    // Skip system apps (SpringBoard = home screen, etc.) — XCUITest can't usefully
+    // attach to them and it would trigger unexpected app launches.
+    let foreground_bid: Option<String> = if bundle_id.is_none() {
+        use ios_rs::lockdown::services::SpringBoardClient;
+        SpringBoardClient::connect(session.lockdown())
+            .ok()
+            .and_then(|mut sbs| sbs.get_foreground_app().ok())
+            .filter(|bid| !bid.starts_with("com.apple.springboard") && !bid.is_empty())
+    } else {
+        None
+    };
+
     let tunnel = session.smoltcp_tunnel_ref()
         .ok_or_else(|| anyhow::anyhow!("no tunnel"))?;
 
     let mut env = std::collections::HashMap::new();
     env.insert("ORIENTATION".to_string(), direction.to_string());
+    let target_bid = bundle_id.unwrap_or_else(|| foreground_bid.as_deref().unwrap_or(""));
+    if !target_bid.is_empty() {
+        eprintln!("[ios-rs] Using foreground app: {target_bid}");
+    }
+    let target_path = if !target_bid.is_empty() {
+        app_bundles.get(target_bid)
+            .and_then(|e| e.properties.get("Path"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string()
+    } else {
+        String::new()
+    };
 
     let config = ios_rs::xctest::RunConfig {
-        bundle_id:              bundle_id.unwrap_or(""),
+        bundle_id:              target_bid,
+        bundle_path:            &target_path,
         test_runner_bundle_id:  runner_bundle_id,
         xctest_config_name:     xctest_config,
         tests_to_run:           &[],
         tests_to_skip:          &[],
         is_xctest:              false,
+        initialize_for_ui:      true,
         extra_env:              env,
     };
 
