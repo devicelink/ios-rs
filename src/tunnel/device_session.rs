@@ -61,7 +61,16 @@ impl DeviceSession {
     /// Reads `IOS_LEGACY` from the environment; the `mode` parameter (from
     /// `--legacy` CLI flag) is applied on top.
     pub fn open(device: Device, mode: ConnectionMode) -> Result<Self, Error> {
-        let effective = ConnectionMode::from_env().with_legacy_flag(mode.is_legacy());
+        // IOS_LEGACY=1 always wins; otherwise respect an explicit Rsd request;
+        // Auto defers to version detection.
+        let env_mode  = ConnectionMode::from_env();
+        let effective = if env_mode == ConnectionMode::Legacy {
+            ConnectionMode::Legacy
+        } else if mode == ConnectionMode::Rsd {
+            ConnectionMode::Rsd
+        } else {
+            env_mode.with_legacy_flag(mode.is_legacy())
+        };
         let version   = detect_version(device.device_id)?;
 
         let (inner, active_path) = match effective {

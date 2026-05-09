@@ -76,17 +76,19 @@ impl Ios17Tunnel {
         let svc         = session.start_service(CORE_DEVICE_PROXY)?;
 
         // 2. Open the raw usbmux tunnel.
+        // The CDTunnel handshake and TLS layer need a TcpStream (for set_read_timeout
+        // and rustls::StreamOwned).  When usbmuxd gives us a Unix socket (the common
+        // macOS case via /var/run/usbmuxd) we bridge it through a loopback TCP relay —
+        // the same pattern used in the DTX and RSD connection helpers.
         let tcp: TcpStream = {
             let socket = MuxConn::open()?.open_tunnel(device_id, svc.port)?;
             match socket {
                 crate::usbmux::MuxSocket::Tcp(s) => s,
                 #[cfg(unix)]
-                crate::usbmux::MuxSocket::Unix(_) => return Err(Error::Protocol(
-                    "CoreDeviceProxy requires TCP; \
-                     set USBMUXD_SOCKET_ADDRESS=127.0.0.1:27015".into()
-                )),
+                crate::usbmux::MuxSocket::Unix(unix) => unix_to_tcp(unix)
+                    .map_err(|e| Error::Protocol(format!("Unix→TCP relay: {e}")))?,
                 crate::usbmux::MuxSocket::External(_) => return Err(Error::Protocol(
-                    "CoreDeviceProxy requires TCP socket".into()
+                    "CoreDeviceProxy requires a socket stream".into()
                 )),
             }
         };
@@ -188,6 +190,32 @@ fn build_tls_config(pair: &PairRecord) -> Result<ClientConfig, Error> {
         .with_custom_certificate_verifier(Arc::new(AcceptAny))
         .with_client_auth_cert(cert_chain, key)
         .map_err(|e| Error::Protocol(e.to_string()))
+}
+
+/// Bridge a Unix socket to a loopback TCP connection.
+///
+/// The CDTunnel and TLS layers need a `TcpStream` (`set_read_timeout`, `rustls`).
+/// When usbmuxd uses its default Unix socket at `/var/run/usbmuxd`, the tunnel
+/// socket comes back as `UnixStream`.  We spin up a loopback relay so the rest
+/// of the code sees a plain `TcpStream` — zero protocol change, just socket type.
+#[cfg(unix)]
+fn unix_to_tcp(unix: std::os::unix::net::UnixStream) -> std::io::Result<TcpStream> {
+    use std::net::TcpListener;
+    let listener = TcpListener::bind("127.0.0.1:0")?;
+    let addr     = listener.local_addr()?;
+    let client   = TcpStream::connect(addr)?;
+    std::thread::spawn(move || {
+        if let Ok((server, _)) = listener.accept() {
+            let mut uni_r = unix.try_clone().unwrap();
+            let mut uni_w = unix;
+            let mut tcp_w = server.try_clone().unwrap();
+            let mut tcp_r = server;
+            let t1 = std::thread::spawn(move || { std::io::copy(&mut uni_r, &mut tcp_w).ok(); });
+            let t2 = std::thread::spawn(move || { std::io::copy(&mut tcp_r, &mut uni_w).ok(); });
+            let _ = (t1.join(), t2.join());
+        }
+    });
+    Ok(client)
 }
 
 #[derive(Debug)]
