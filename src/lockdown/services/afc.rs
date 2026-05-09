@@ -228,6 +228,11 @@ impl AfcClient {
     }
 
     /// Rename or move `from` to `to`.
+    ///
+    /// **Note:** on the standard AFC media-partition service (`com.apple.afc`)
+    /// iOS requires the destination path to already exist; renaming to a
+    /// non-existent path silently removes the source without creating the
+    /// destination.  This is an iOS restriction, not a protocol bug.
     pub fn rename(&mut self, from: &str, to: &str) -> Result<(), Error> {
         let mut args = nul_str(from);
         args.extend_from_slice(&nul_str(to));

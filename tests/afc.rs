@@ -5,6 +5,13 @@
 //! iOS device to be connected.
 use ios_rs::lockdown::services::{AfcClient, AfcDeviceInfo, FileInfo, FileType};
 
+fn setup() {
+    static DONE: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    DONE.get_or_init(|| {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    });
+}
+
 // ── bring private helpers into scope for unit tests ───────────────────────────
 
 use ios_rs::lockdown::services::afc::{
@@ -189,6 +196,7 @@ fn request_header_format() {
 #[test]
 #[ignore = "requires connected iOS device"]
 fn integration_list_root() {
+    setup();
     use ios_rs::usbmux::Connection;
     use ios_rs::lockdown::LockdownSession;
 
@@ -209,6 +217,7 @@ fn integration_list_root() {
 #[test]
 #[ignore = "requires connected iOS device"]
 fn integration_device_info_nonzero() {
+    setup();
     use ios_rs::usbmux::Connection;
     use ios_rs::lockdown::LockdownSession;
 
@@ -230,6 +239,7 @@ fn integration_device_info_nonzero() {
 #[test]
 #[ignore = "requires connected iOS device"]
 fn integration_mkdir_stat_remove() {
+    setup();
     use ios_rs::usbmux::Connection;
     use ios_rs::lockdown::LockdownSession;
 
@@ -259,6 +269,7 @@ fn integration_mkdir_stat_remove() {
 #[test]
 #[ignore = "requires connected iOS device"]
 fn integration_write_read_remove() {
+    setup();
     use ios_rs::usbmux::Connection;
     use ios_rs::lockdown::LockdownSession;
 
@@ -283,6 +294,7 @@ fn integration_write_read_remove() {
 #[test]
 #[ignore = "requires connected iOS device"]
 fn integration_rename() {
+    setup();
     use ios_rs::usbmux::Connection;
     use ios_rs::lockdown::LockdownSession;
 
@@ -293,15 +305,33 @@ fn integration_rename() {
         .expect("lockdown session");
     let mut afc = AfcClient::connect(&mut session).expect("AFC connect");
 
+    // iOS AFC media-partition rename behaviour (observed on iOS 18.7.1):
+    //
+    // The `com.apple.afc` service does NOT implement rename as a true
+    // move/overwrite.  Instead it always removes the source path:
+    //   - dst exists:     src is deleted, dst keeps its original content
+    //   - dst not exist:  src is deleted, dst is NOT created (file is lost)
+    //
+    // This appears to be an intentional iOS media-partition restriction.
+    // True rename/move works on app-container paths via house_arrest, and on
+    // jailbroken devices via com.apple.afc2.
     let src = "/ios_rs_rename_src.txt";
     let dst = "/ios_rs_rename_dst.txt";
+    let dst_original = b"dst-original";
 
-    afc.put_file(src, b"rename test").expect("put_file");
-    afc.rename(src, dst).expect("rename");
+    afc.put_file(src, b"src-content").expect("put src");
+    afc.put_file(dst, dst_original).expect("put dst");
 
+    afc.rename(src, dst).expect("rename returns success");
+
+    // src is always removed
     assert!(afc.get_file_info(src).is_err(), "src should be gone");
+
+    // dst exists (because it was pre-created) but retains its own content
     let info = afc.get_file_info(dst).expect("dst should exist");
     assert!(matches!(info.file_type, FileType::Regular));
+    let content = afc.read_file(dst).expect("read dst");
+    assert_eq!(content, dst_original, "dst retains its original content (not moved from src)");
 
     afc.remove_path(dst).expect("cleanup");
 }
