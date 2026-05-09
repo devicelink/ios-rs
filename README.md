@@ -80,6 +80,7 @@ Commands:
   relay        Forward a local TCP port to a device service port
   watch        Watch for device attach/detach events
   version      Show iOS version and available connection paths
+  afc          Browse and transfer files on the device media partition (DCIM, Books, …)
   apps         App management (list, install, uninstall)
   orientation  Get or set screen orientation (set requires pre-installed OrientationHelper XCTest)
   lang         Get or set device language and locale
