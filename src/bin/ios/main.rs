@@ -59,6 +59,12 @@ enum Cmd {
         udid: Option<String>,
     },
 
+    /// Browse and transfer files on the device media partition (DCIM, Books, …)
+    Afc {
+        #[command(subcommand)]
+        action: AfcAction,
+    },
+
     /// App management (list, install, uninstall)
     Apps {
         #[command(subcommand)]
@@ -148,6 +154,69 @@ enum Cmd {
         test_runner_bundle_id: String,
         #[arg(long = "xctestconfig", default_value = "WebDriverAgentRunner.xctest")]
         xctest_config: String,
+        #[arg(long)]
+        udid: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum AfcAction {
+    /// List directory contents
+    Ls {
+        /// Show size, type, and modification time
+        #[arg(short, long)]
+        long: bool,
+        /// Path on the device (default: /)
+        #[arg(default_value = "/")]
+        path: String,
+        #[arg(long)]
+        udid: Option<String>,
+    },
+    /// Print metadata for a file or directory
+    Stat {
+        path: String,
+        #[arg(long)]
+        udid: Option<String>,
+    },
+    /// Print device file-system info (model, free space)
+    Info {
+        #[arg(long)]
+        udid: Option<String>,
+    },
+    /// Download a file or directory from the device
+    Pull {
+        /// Remote path on the device
+        remote: String,
+        /// Local destination path
+        local: String,
+        #[arg(long)]
+        udid: Option<String>,
+    },
+    /// Upload a file or directory to the device
+    Push {
+        /// Local source path
+        local: String,
+        /// Remote destination path on the device
+        remote: String,
+        #[arg(long)]
+        udid: Option<String>,
+    },
+    /// Remove a file or directory
+    Rm {
+        path: String,
+        #[arg(long)]
+        udid: Option<String>,
+    },
+    /// Create a directory
+    Mkdir {
+        path: String,
+        #[arg(long)]
+        udid: Option<String>,
+    },
+    /// Rename or move a file or directory
+    Mv {
+        from: String,
+        to: String,
         #[arg(long)]
         udid: Option<String>,
     },
@@ -268,6 +337,24 @@ fn main() -> Result<()> {
                 &test_runner_bundle_id,
                 &xctest_config,
             ),
+        Cmd::Afc { action } => match action {
+            AfcAction::Ls   { long, path, udid } =>
+                cmd::afc::ls(udid.as_deref(), mode, &path, long),
+            AfcAction::Stat { path, udid } =>
+                cmd::afc::stat(udid.as_deref(), mode, &path),
+            AfcAction::Info { udid } =>
+                cmd::afc::info(udid.as_deref(), mode),
+            AfcAction::Pull { remote, local, udid } =>
+                cmd::afc::pull(udid.as_deref(), mode, &remote, std::path::Path::new(&local)),
+            AfcAction::Push { local, remote, udid } =>
+                cmd::afc::push(udid.as_deref(), mode, std::path::Path::new(&local), &remote),
+            AfcAction::Rm   { path, udid } =>
+                cmd::afc::rm(udid.as_deref(), mode, &path),
+            AfcAction::Mkdir { path, udid } =>
+                cmd::afc::mkdir(udid.as_deref(), mode, &path),
+            AfcAction::Mv   { from, to, udid } =>
+                cmd::afc::mv(udid.as_deref(), mode, &from, &to),
+        },
         Cmd::Apps { action }  => match action {
             AppsAction::List { udid, system, all } =>
                 cmd::apps::list::run(udid.as_deref(), system, all, mode),

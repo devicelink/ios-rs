@@ -1,3 +1,4 @@
+pub mod afc;
 pub mod apps;
 pub mod devices;
 pub mod lang;

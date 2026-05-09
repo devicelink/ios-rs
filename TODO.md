@@ -17,10 +17,16 @@ Comparison against [pymobiledevice3](https://github.com/doronz88/pymobiledevice3
 
 ## File System (AFC)
 
-- [ ] AFC shell — interactive file browser on the media partition
-- [ ] Pull / push files to/from media partition
-- [ ] Remove / mkdir / tree on device file system
-- [ ] Per-app container file access (`apps afc`)
+- [x] `afc ls [--long] [path]` — list directory
+- [x] `afc stat <path>` — file metadata (type, size, mtime)
+- [x] `afc info` — device info (model, total/free space)
+- [x] `afc pull <remote> <local>` — download file or directory tree
+- [x] `afc push <local> <remote>` — upload file or directory tree
+- [x] `afc rm <path>` — delete file or directory
+- [x] `afc mkdir <path>` — create directory
+- [x] `afc mv <from> <to>` — rename / move
+- [ ] AFC shell — interactive readline-based file browser
+- [ ] Per-app container file access (`afc --app <bundle-id>`)
 
 ## Syslog & Logging
 
