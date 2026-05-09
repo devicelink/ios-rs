@@ -41,9 +41,10 @@
 ///
 /// ## Usage
 ///   ios orientation get
-///   ios orientation set portrait  [--bundle-id=<app_under_test>]
-///                                  --runner-bundle-id=<com.example.OrientationHelper.xctrunner>
-///                                  --xctest-config=ios-rs-helperUITests.xctest
+///   ios orientation set portrait
+///
+/// The orientation helper runner must be installed once. Do NOT pass --bundle-id;
+/// doing so causes the named app to launch as the UITest target, which is disruptive.
 use anyhow::{bail, Result};
 use ios_rs::lockdown::services::{Orientation, SpringBoardClient};
 use ios_rs::tunnel::ConnectionMode;

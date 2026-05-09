@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Regenerates the README help section when CLI source files are staged.
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+
+# Only run when CLI-affecting files are staged
+if ! git diff --cached --name-only | grep -qE '^(src/|Cargo\.toml|Cargo\.lock)'; then
+  exit 0
+fi
+
+echo "CLI sources changed — regenerating README help section..."
+"$ROOT/scripts/update-readme-help.sh"
+
+if ! git diff --quiet README.md; then
+  git add README.md
+  echo "README.md updated and staged."
+fi

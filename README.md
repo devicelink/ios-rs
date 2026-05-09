@@ -1,6 +1,6 @@
 # ios-rs
 
-A Rust workspace for interacting with iOS devices over USB via usbmuxd. Implements the full iOS 17+ connection stack from scratch — usbmux framing, lockdownd sessions, CDTunnel/RSD, RemoteXPC over HTTP/2, and a userspace IPv6 stack — without any Apple SDK dependency.
+A Rust crate for interacting with iOS devices over USB via usbmuxd. Implements the full iOS 17+ connection stack from scratch — usbmux framing, lockdownd sessions, CDTunnel/RSD, RemoteXPC over HTTP/2, and a userspace IPv6 stack — without any Apple SDK dependency.
 
 Tested against an iPhone SE running iOS 18.7.1.
 
@@ -14,43 +14,263 @@ Tested against an iPhone SE running iOS 18.7.1.
 
 The modern path is selected automatically. Use `--legacy` or `IOS_LEGACY=1` to force the lockdownd path on any version.
 
-## Crates
+## Features
 
-| Crate | Purpose |
-|---|---|
-| `usbmux-proto` | Sans-IO usbmux codec (ListDevices, Connect, Listen) |
-| `usbmux` | Blocking usbmux client; Unix socket or TCP proxy |
-| `usbmux-sim` | In-process usbmux simulator for integration tests |
-| `lockdown` | lockdownd sessions: TLS, StartSession, StartService, pair records, AFC, installation_proxy |
-| `xpc-proto` | XPC binary value codec (encode + decode) |
-| `remotexpc` | RemoteXPC over HTTP/2: handshake, send/receive XPC messages |
-| `rsd` | Remote Service Discovery client: parses the device's service catalogue |
-| `tunnel` | CDTunnel handshake, smoltcp userspace IPv6 stack, `DeviceSession` routing |
-| `ios` | CLI binary |
+The crate is organised into feature layers. Enable only what you need:
+
+| Feature | Enables | Pulls in |
+|---|---|---|
+| `lockdown` | lockdownd sessions: TLS, StartSession, StartService, pair records, AFC, installation_proxy | rustls |
+| `tunnel` | CDTunnel handshake, smoltcp userspace IPv6 stack, `DeviceSession` routing | `lockdown` + smoltcp + crypto |
+| `xctest` | XCTest / XCUITest runner | `tunnel` |
+| `cli` | `ios` CLI binary | `tunnel` + `xctest` + clap + ureq |
+| `sim` | In-process usbmux simulator for integration tests | — |
+
+`default = ["tunnel", "cli"]`. The usbmux codec and XPC/RemoteXPC layers are always compiled unconditionally as they carry no heavy dependencies.
+
+## Installation
+
+Pre-built binaries are published on every merge to main.
+
+**macOS — Apple Silicon**
+```sh
+curl -fsSL https://github.com/devicelink/ios-rs/releases/latest/download/ios-aarch64-apple-darwin.tar.gz | tar xz -C /usr/local/bin
+```
+
+**macOS — Intel**
+```sh
+curl -fsSL https://github.com/devicelink/ios-rs/releases/latest/download/ios-x86_64-apple-darwin.tar.gz | tar xz -C /usr/local/bin
+```
+
+**Linux**
+```sh
+curl -fsSL https://github.com/devicelink/ios-rs/releases/latest/download/ios-x86_64-unknown-linux-gnu.tar.gz | tar xz -C /usr/local/bin
+```
+
+**Windows** (PowerShell)
+```powershell
+irm https://github.com/devicelink/ios-rs/releases/latest/download/ios-x86_64-pc-windows-msvc.zip -OutFile ios.zip
+Expand-Archive ios.zip .
+Move-Item ios.exe "$env:LOCALAPPDATA\Microsoft\WindowsApps\ios.exe"
+```
+
+Or build from source:
+```sh
+cargo install --git https://github.com/devicelink/ios-rs --features cli
+```
 
 ## CLI
 
-```
-cargo build -p ios
+```sh
+cargo build --bin ios --features cli
 ```
 
+<!-- help:start -->
+### `ios`
+
 ```
-ios [--legacy] <command>
+Interact with iOS devices via usbmuxd
+
+Usage: ios [OPTIONS] <COMMAND>
 
 Commands:
-  devices                    List connected iOS devices
-  info       [--udid <id>]   Device info from lockdownd
-  version    [--udid <id>]   iOS version and available connection paths
-  services   [--udid <id>]   List lockdownd services
-  rsd        [--udid <id>]   RSD service catalogue via CDTunnel (iOS 17.4+)
-  apps list  [--udid <id>]   List installed user apps
-  apps list  --system        List system apps
-  apps list  --all           List all apps
-  apps install <ipa>         Install an IPA file
-  apps uninstall <bundle-id> Uninstall an app
-  relay <port> [--listen <port>]  TCP port forward to a device service
-  watch                      Print device attach/detach events
+  devices      List connected iOS devices
+  info         Print device information from lockdownd
+  services     List available services on the device
+  relay        Forward a local TCP port to a device service port
+  watch        Watch for device attach/detach events
+  version      Show iOS version and available connection paths
+  apps         App management (list, install, uninstall)
+  orientation  Get or set screen orientation (set requires pre-installed OrientationHelper XCTest)
+  lang         Get or set device language and locale
+  date         Get or set device timezone and clock
+  rsd          Show RSD service catalogue via CDTunnel (iOS 17.4+)
+  mounter      Mount the personalized Developer Disk Image (unlocks Instruments / dtservicehub)
+  perf         Live performance monitoring (CPU, RAM per process) via Instruments sysmontap
+  runtest      Run XCTest bundle (UI or unit tests) on iOS 17.4+
+  runwda       Start WebDriverAgent on iOS 17.4+
+  help         Print this message or the help of the given subcommand(s)
 ```
+
+### `ios devices`
+
+```
+List connected iOS devices
+
+Usage: ios devices [OPTIONS]
+```
+
+### `ios info`
+
+```
+Print device information from lockdownd
+
+Usage: ios info [OPTIONS]
+```
+
+### `ios services`
+
+```
+List available services on the device
+
+Usage: ios services [OPTIONS]
+```
+
+### `ios relay`
+
+```
+Forward a local TCP port to a device service port
+
+Usage: ios relay [OPTIONS] <PORT>
+
+Arguments:
+  <PORT>  Device service port to connect to
+
+Options:
+      --listen <LISTEN>  [default: 0]
+```
+
+### `ios watch`
+
+```
+Watch for device attach/detach events
+
+Usage: ios watch [OPTIONS]
+```
+
+### `ios version`
+
+```
+Show iOS version and available connection paths
+
+Usage: ios version [OPTIONS]
+```
+
+### `ios apps`
+
+```
+App management (list, install, uninstall)
+
+Usage: ios apps [OPTIONS] <COMMAND>
+
+Commands:
+  list       List installed apps
+  install    Install an IPA file
+  uninstall  Uninstall an app by bundle ID
+  help       Print this message or the help of the given subcommand(s)
+```
+
+### `ios orientation`
+
+```
+Get or set screen orientation (set requires pre-installed OrientationHelper XCTest)
+
+Usage: ios orientation [OPTIONS] <COMMAND>
+
+Commands:
+  get   Read current screen orientation from SpringBoard
+  set   Set screen orientation via a short-lived XCUITest (see `ios orientation set --help`)
+  help  Print this message or the help of the given subcommand(s)
+```
+
+### `ios lang`
+
+```
+Get or set device language and locale
+
+Usage: ios lang [OPTIONS]
+
+Options:
+      --setlang <SET_LANG>      Set language (e.g. "en", "de", "zh-Hans")
+      --setlocale <SET_LOCALE>  Set locale (e.g. "en_US", "de_DE")
+```
+
+### `ios date`
+
+```
+Get or set device timezone and clock
+
+Usage: ios date [OPTIONS]
+
+Options:
+      --settz <TIMEZONE>  Set timezone (e.g. "America/New_York", "Europe/Berlin")
+      --sync              Sync device clock to host time
+```
+
+### `ios rsd`
+
+```
+Show RSD service catalogue via CDTunnel (iOS 17.4+)
+
+Usage: ios rsd [OPTIONS]
+```
+
+### `ios mounter`
+
+```
+Mount the personalized Developer Disk Image (unlocks Instruments / dtservicehub)
+
+Usage: ios mounter [OPTIONS] <COMMAND>
+
+Commands:
+  mount   Mount the personalized DDI (downloads automatically on first run)
+  status  Check if the developer disk image is currently mounted
+  help    Print this message or the help of the given subcommand(s)
+```
+
+### `ios perf`
+
+```
+Live performance monitoring (CPU, RAM per process) via Instruments sysmontap
+
+Usage: ios perf [OPTIONS]
+
+Options:
+      --json                 Output newline-delimited JSON instead of the live htop view
+      --interval <INTERVAL>  Sampling interval in milliseconds (default: 1000) [default: 1000]
+```
+
+### `ios runtest`
+
+```
+Run XCTest bundle (UI or unit tests) on iOS 17.4+
+
+Usage: ios runtest [OPTIONS] --test-runner-bundle-id <TEST_RUNNER_BUNDLE_ID> --xctest-config <XCTEST_CONFIG>
+
+Options:
+      --bundle-id <BUNDLE_ID>
+          
+      --test-runner-bundle-id <TEST_RUNNER_BUNDLE_ID>
+          
+      --xctest-config <XCTEST_CONFIG>
+          
+      --test-to-run <TESTS_TO_RUN>
+          
+      --test-to-skip <TESTS_TO_SKIP>
+          
+      --xctest
+          Run as a unit test (not a UI test)
+      --env <ENV>
+          
+```
+
+### `ios runwda`
+
+```
+Start WebDriverAgent on iOS 17.4+
+
+Usage: ios runwda [OPTIONS]
+
+Options:
+      --bundleid <BUNDLE_ID>
+          [default: com.facebook.WebDriverAgentRunner]
+      --testrunnerbundleid <TEST_RUNNER_BUNDLE_ID>
+          [default: com.facebook.WebDriverAgentRunner.xctrunner]
+      --xctestconfig <XCTEST_CONFIG>
+          [default: WebDriverAgentRunner.xctest]
+```
+
+<!-- help:end -->
 
 ### Examples
 

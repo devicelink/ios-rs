@@ -20,20 +20,38 @@ jobs:
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: clippy, rustfmt
+
+      - name: Install just
+        uses: extractions/setup-just@v2
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: Build workspace
-        run: cargo build --workspace --locked
+      - name: Build
+        run: cargo build --locked
 
-      - name: Unit tests
-        run: cargo test --lib --locked
+      - name: Test
+        run: just test-all
 
-      - name: Integration tests (usbmux simulator)
-        run: cargo test --test usbmux --features sim --locked
-        # device tests require a physical iOS device — excluded from CI
+      - name: Lint
+        run: just lint
 
-      - name: Clippy
-        run: cargo clippy --workspace --locked -- -D warnings
+  lint-readme:
+    name: README help text up to date
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check README is up to date
+        run: just readme-check

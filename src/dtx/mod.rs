@@ -313,18 +313,36 @@ pub fn read_message<R: Read>(r: &mut R) -> Result<DtxMessage, Error> {
     let magic = u32::from_be_bytes(hdr[0..4].try_into().unwrap());
     if magic != 0x795B3D1F { return Err(Error::BadMagic(magic)); }
 
-    let msg_len   = u32::from_le_bytes(hdr[12..16].try_into().unwrap()) as usize;
-    let msg_id    = u32::from_le_bytes(hdr[16..20].try_into().unwrap());
-    let conv_id   = u32::from_le_bytes(hdr[20..24].try_into().unwrap());
-    let channel   = i32::from_le_bytes(hdr[24..28].try_into().unwrap());
-    let expects   = u32::from_le_bytes(hdr[28..32].try_into().unwrap()) != 0;
+    let fragment_count = u16::from_le_bytes(hdr[10..12].try_into().unwrap());
+    let msg_len        = u32::from_le_bytes(hdr[12..16].try_into().unwrap()) as usize;
+    let msg_id         = u32::from_le_bytes(hdr[16..20].try_into().unwrap());
+    let conv_id        = u32::from_le_bytes(hdr[20..24].try_into().unwrap());
+    let channel        = i32::from_le_bytes(hdr[24..28].try_into().unwrap());
+    let expects        = u32::from_le_bytes(hdr[28..32].try_into().unwrap()) != 0;
 
     if msg_len == 0 {
+        // Drain any remaining empty fragments
+        for _ in 1..fragment_count {
+            let mut fhdr = [0u8; 32];
+            read_exact(r, &mut fhdr)?;
+        }
         return Ok(DtxMessage { msg_id, conv_id, channel, expects_reply: expects, msg_type: 0, aux: vec![], payload: None });
     }
 
     let mut payload = vec![0u8; msg_len];
     read_exact(r, &mut payload)?;
+
+    // Assemble remaining fragments (each has a 32-byte header + continuation bytes)
+    for _ in 1..fragment_count {
+        let mut fhdr = [0u8; 32];
+        read_exact(r, &mut fhdr)?;
+        let flen = u32::from_le_bytes(fhdr[12..16].try_into().unwrap()) as usize;
+        if flen > 0 {
+            let mut fbuf = vec![0u8; flen];
+            read_exact(r, &mut fbuf)?;
+            payload.extend_from_slice(&fbuf);
+        }
+    }
 
     let msg_type  = u32::from_le_bytes(payload[0..4].try_into().unwrap());
     let aux_len   = u32::from_le_bytes(payload[4..8].try_into().unwrap()) as usize;

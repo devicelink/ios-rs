@@ -16,7 +16,7 @@ required-features = ["cli"]
 
 [features]
 default  = ["tunnel", "cli"]
-cli      = ["tunnel", "xctest", "dep:clap", "dep:comfy-table", "dep:anyhow"]
+cli      = ["tunnel", "xctest", "dep:clap", "dep:comfy-table", "dep:anyhow", "dep:ureq"]
 xctest   = ["tunnel"]
 sim      = []
 lockdown = ["dep:rustls", "dep:rustls-pemfile"]
@@ -42,6 +42,7 @@ thiserror    = "2"
 anyhow       = { version = "1", optional = true }
 clap         = { version = "4", features = ["derive"], optional = true }
 comfy-table  = { version = "7", optional = true }
+ureq         = { version = "2", optional = true }
 
 rustls           = { version = "0.23", features = ["tls12"], optional = true }
 rustls-pemfile   = { version = "2", optional = true }
@@ -56,4 +57,5 @@ srp              = { version = "0.6", optional = true }
 rand             = { version = "0.8", optional = true }
 
 [dev-dependencies]
-anyhow = "1"
+anyhow      = "1"
+cargo-husky = { version = "1", default-features = false, features = ["user-hooks"] }

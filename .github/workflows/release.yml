@@ -1,0 +1,82 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build — ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - { target: x86_64-apple-darwin,     os: macos-13       }
+          - { target: aarch64-apple-darwin,     os: macos-14       }
+          - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest  }
+          - { target: x86_64-pc-windows-msvc,   os: windows-latest }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --release --bin ios --features cli --locked
+
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          ARCHIVE="ios-${{ matrix.target }}.tar.gz"
+          tar czf "$ARCHIVE" -C target/release ios
+          echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $archive = "ios-${{ matrix.target }}.zip"
+          Compress-Archive -Path target\release\ios.exe -DestinationPath $archive
+          "ARCHIVE=$archive" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: ${{ env.ARCHIVE }}
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute version tag
+        id: version
+        run: |
+          BASE=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2 | cut -d'.' -f1,2)
+          echo "tag=v${BASE}.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: dist
+
+      - name: Generate checksums
+        working-directory: dist
+        run: sha256sum * | tee checksums.txt
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          files: dist/*
+          generate_release_notes: true

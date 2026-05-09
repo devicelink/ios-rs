@@ -4,6 +4,13 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use ios_rs::tunnel::ConnectionMode;
 
+// ureq uses rustls 0.23 which requires an explicit crypto provider.
+// Install ring before any TLS connections are made.
+#[cfg(feature = "cli")]
+fn install_crypto_provider() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+}
+
 #[derive(Parser)]
 #[command(name = "ios", about = "Interact with iOS devices via usbmuxd")]
 struct Cli {
@@ -94,6 +101,24 @@ enum Cmd {
         udid: Option<String>,
     },
 
+    /// Mount the personalized Developer Disk Image (unlocks Instruments / dtservicehub)
+    Mounter {
+        #[command(subcommand)]
+        action: MounterAction,
+    },
+
+    /// Live performance monitoring (CPU, RAM per process) via Instruments sysmontap
+    Perf {
+        /// Output newline-delimited JSON instead of the live htop view
+        #[arg(long)]
+        json: bool,
+        /// Sampling interval in milliseconds (default: 1000)
+        #[arg(long, default_value = "1000")]
+        interval: u64,
+        #[arg(long)]
+        udid: Option<String>,
+    },
+
     /// Run XCTest bundle (UI or unit tests) on iOS 17.4+
     Runtest {
         #[arg(long)]
@@ -123,6 +148,20 @@ enum Cmd {
         test_runner_bundle_id: String,
         #[arg(long = "xctestconfig", default_value = "WebDriverAgentRunner.xctest")]
         xctest_config: String,
+        #[arg(long)]
+        udid: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum MounterAction {
+    /// Mount the personalized DDI (downloads automatically on first run)
+    Mount {
+        #[arg(long)]
+        udid: Option<String>,
+    },
+    /// Check if the developer disk image is currently mounted
+    Status {
         #[arg(long)]
         udid: Option<String>,
     },
@@ -179,6 +218,7 @@ enum OrientationAction {
 }
 
 fn main() -> Result<()> {
+    install_crypto_provider();
     let cli  = Cli::parse();
     let mode = ConnectionMode::from_env().with_legacy_flag(cli.legacy);
 
@@ -203,6 +243,12 @@ fn main() -> Result<()> {
         Cmd::Date { timezone, sync, udid } =>
             cmd::timezone::run(udid.as_deref(), timezone.as_deref(), sync, mode),
         Cmd::Rsd { udid }     => cmd::rsd::run(udid.as_deref()),
+        Cmd::Mounter { action } => match action {
+            MounterAction::Mount  { udid } => cmd::mounter::mount(udid.as_deref()),
+            MounterAction::Status { udid } => cmd::mounter::status(udid.as_deref()),
+        },
+        Cmd::Perf { json, interval, udid } =>
+            cmd::perf::run(udid.as_deref(), json, interval),
         Cmd::Runtest { bundle_id, test_runner_bundle_id, xctest_config,
                        tests_to_run, tests_to_skip, xctest, env, udid } =>
             cmd::runtest::run_test(
