@@ -53,6 +53,21 @@ enum Cmd {
     /// Watch for device attach/detach events
     Watch,
 
+    /// Stream live syslog output from the device (Ctrl-C to stop)
+    Syslog {
+        /// Filter entries to those whose process name contains this string
+        #[arg(long)]
+        process: Option<String>,
+        /// Filter entries to those whose text contains this string (case-insensitive)
+        #[arg(long)]
+        filter: Option<String>,
+        /// Output newline-delimited JSON instead of raw log lines
+        #[arg(long)]
+        json: bool,
+        #[arg(long)]
+        udid: Option<String>,
+    },
+
     /// Show iOS version and available connection paths
     Version {
         #[arg(long)]
@@ -321,6 +336,8 @@ fn main() -> Result<()> {
         Cmd::Services { udid} => cmd::services::run(udid.as_deref(), mode),
         Cmd::Relay { port, listen, udid } => cmd::relay::run(udid.as_deref(), port, listen),
         Cmd::Watch            => cmd::watch::run(),
+        Cmd::Syslog { process, filter, json, udid } =>
+            cmd::syslog::run(udid.as_deref(), mode, process.as_deref(), filter.as_deref(), json),
         Cmd::Version { udid } => cmd::version::run(udid.as_deref()),
         Cmd::Orientation { action } => match action {
             OrientationAction::Get { udid } =>
