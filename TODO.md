@@ -7,7 +7,8 @@ Comparison against [pymobiledevice3](https://github.com/doronz88/pymobiledevice3
 - [ ] Pair device (`lockdown pair` / `lockdown unpair`)
 - [ ] Save / read pair record to disk
 - [ ] Enable developer mode (`amfi enable-developer-mode`, query status)
-- [ ] Reboot device
+- [x] Reboot device (`ios reboot`)
+- [x] Shut down device (`ios shutdown`)
 - [ ] Erase / factory reset
 - [ ] Device name — get / set
 - [ ] Wi-Fi connections — enable / disable
@@ -36,7 +37,8 @@ Comparison against [pymobiledevice3](https://github.com/doronz88/pymobiledevice3
 
 ## Screenshot & Screen Recording
 
-- [ ] Single screenshot capture (PNG output)
+- [ ] Single screenshot capture — `com.apple.mobile.screenshotr` (lockdownd) works on iOS < 17;
+      iOS 17.4+ requires `com.apple.corecaptured.remoteservice` (remote-XPC, not yet implemented)
 - [ ] Streaming screenshot mode
 
 ## Location Spoofing
@@ -62,10 +64,10 @@ Comparison against [pymobiledevice3](https://github.com/doronz88/pymobiledevice3
 
 ## Diagnostics
 
-- [ ] Battery info (charge level, health, cycle count)
+- [x] Battery info — cycle count, design/full capacity, health (`ios diagnostics battery`)
 - [ ] Battery monitoring (live)
 - [ ] Disk space info
-- [ ] General diagnostics dump
+- [x] General diagnostics dump (`ios diagnostics all`)
 - [ ] Sysdiagnose capture
 
 ## Network

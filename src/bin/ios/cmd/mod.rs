@@ -1,5 +1,7 @@
 pub mod afc;
 pub mod apps;
+pub mod diagnostics;
+pub mod screenshot;
 pub mod syslog;
 pub mod devices;
 pub mod lang;

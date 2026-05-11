@@ -53,6 +53,33 @@ enum Cmd {
     /// Watch for device attach/detach events
     Watch,
 
+    /// Capture a screenshot (PNG)
+    Screenshot {
+        /// Output file path (use - for stdout)
+        #[arg(default_value = "screenshot.png")]
+        output: String,
+        #[arg(long)]
+        udid: Option<String>,
+    },
+
+    /// Reboot the device
+    Reboot {
+        #[arg(long)]
+        udid: Option<String>,
+    },
+
+    /// Shut down the device
+    Shutdown {
+        #[arg(long)]
+        udid: Option<String>,
+    },
+
+    /// Device diagnostics (battery, full dump)
+    Diagnostics {
+        #[command(subcommand)]
+        action: DiagnosticsAction,
+    },
+
     /// Stream live syslog output from the device (Ctrl-C to stop)
     Syslog {
         /// Filter entries to those whose process name contains this string
@@ -169,6 +196,20 @@ enum Cmd {
         test_runner_bundle_id: String,
         #[arg(long = "xctestconfig", default_value = "WebDriverAgentRunner.xctest")]
         xctest_config: String,
+        #[arg(long)]
+        udid: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum DiagnosticsAction {
+    /// Battery state — capacity, voltage, cycle count
+    Battery {
+        #[arg(long)]
+        udid: Option<String>,
+    },
+    /// Full diagnostics dump (raw plist)
+    All {
         #[arg(long)]
         udid: Option<String>,
     },
@@ -336,6 +377,14 @@ fn main() -> Result<()> {
         Cmd::Services { udid} => cmd::services::run(udid.as_deref(), mode),
         Cmd::Relay { port, listen, udid } => cmd::relay::run(udid.as_deref(), port, listen),
         Cmd::Watch            => cmd::watch::run(),
+        Cmd::Screenshot { output, udid } =>
+            cmd::screenshot::run(udid.as_deref(), mode, &output),
+        Cmd::Reboot   { udid } => cmd::diagnostics::reboot(udid.as_deref(), mode),
+        Cmd::Shutdown { udid } => cmd::diagnostics::shutdown(udid.as_deref(), mode),
+        Cmd::Diagnostics { action } => match action {
+            DiagnosticsAction::Battery { udid } => cmd::diagnostics::battery(udid.as_deref(), mode),
+            DiagnosticsAction::All     { udid } => cmd::diagnostics::all(udid.as_deref(), mode),
+        },
         Cmd::Syslog { process, filter, json, udid } =>
             cmd::syslog::run(udid.as_deref(), mode, process.as_deref(), filter.as_deref(), json),
         Cmd::Version { udid } => cmd::version::run(udid.as_deref()),

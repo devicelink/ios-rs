@@ -79,6 +79,10 @@ Commands:
   services     List available services on the device
   relay        Forward a local TCP port to a device service port
   watch        Watch for device attach/detach events
+  screenshot   Capture a screenshot (PNG)
+  reboot       Reboot the device
+  shutdown     Shut down the device
+  diagnostics  Device diagnostics (battery, full dump)
   syslog       Stream live syslog output from the device (Ctrl-C to stop)
   version      Show iOS version and available connection paths
   afc          Browse and transfer files on the device media partition (DCIM, Books, …)
