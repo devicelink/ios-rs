@@ -1,5 +1,7 @@
 pub mod afc;
+pub mod diagnostics;
 pub mod installation_proxy;
+pub mod screenshot;
 pub mod springboard;
 pub mod syslog;
 
