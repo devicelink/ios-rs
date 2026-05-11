@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::{bail, Context, Result};
 use ios_rs::lockdown::services::{AfcClient, FileType};
@@ -6,11 +6,48 @@ use ios_rs::tunnel::ConnectionMode;
 
 use crate::cmd::open_session;
 
+// ── connect helper ────────────────────────────────────────────────────────────
+
+/// Open an AFC connection.  If `app` is `Some`, connects to that app's sandbox
+/// container via house-arrest; otherwise connects to the media partition.
+///
+/// On iOS 17.4+ the house-arrest service is only accessible via the RSD shim
+/// (`com.apple.mobile.house_arrest.shim.remote`); this is selected
+/// automatically when the session is on the RSD path.
+fn connect(
+    udid: Option<&str>,
+    mode: ConnectionMode,
+    app:  Option<&str>,
+) -> Result<(ios_rs::tunnel::DeviceSession, AfcClient)> {
+    let mut session = open_session(udid, mode)?;
+    let afc = match app {
+        Some(bundle_id) => {
+            if session.is_rsd() {
+                let stream = session
+                    .connect_rsd_shim("com.apple.mobile.house_arrest.shim.remote")
+                    .with_context(|| format!("connect house_arrest shim for {bundle_id}"))?;
+                AfcClient::connect_app_shim(stream, bundle_id)
+                    .with_context(|| format!("house_arrest handshake for {bundle_id}"))?
+            } else {
+                AfcClient::connect_app(session.lockdown(), bundle_id)
+                    .with_context(|| format!("connect app container {bundle_id}"))?
+            }
+        }
+        None => AfcClient::connect(session.lockdown()).context("connect AFC")?,
+    };
+    Ok((session, afc))
+}
+
 // ── entry points ──────────────────────────────────────────────────────────────
 
-pub fn ls(udid: Option<&str>, mode: ConnectionMode, path: &str, long: bool) -> Result<()> {
-    let mut session = open_session(udid, mode)?;
-    let mut afc = AfcClient::connect(session.lockdown()).context("connect AFC")?;
+pub fn ls(
+    udid: Option<&str>,
+    mode: ConnectionMode,
+    path: &str,
+    long: bool,
+    app:  Option<&str>,
+) -> Result<()> {
+    let (_session, mut afc) = connect(udid, mode, app)?;
 
     let mut entries = afc.list_dir(path).with_context(|| format!("ls {path}"))?;
     entries.sort();
@@ -26,11 +63,10 @@ pub fn ls(udid: Option<&str>, mode: ConnectionMode, path: &str, long: bool) -> R
                     } else {
                         "         ".into()
                     };
-                    let extra = if let Some(target) = &info.link_target {
-                        format!(" -> {target}")
-                    } else {
-                        String::new()
-                    };
+                    let extra = info.link_target
+                        .as_deref()
+                        .map(|t| format!(" -> {t}"))
+                        .unwrap_or_default();
                     println!("{} {}  {}  {name}{extra}",
                         info.file_type.indicator(), size_col, secs);
                 }
@@ -43,9 +79,13 @@ pub fn ls(udid: Option<&str>, mode: ConnectionMode, path: &str, long: bool) -> R
     Ok(())
 }
 
-pub fn stat(udid: Option<&str>, mode: ConnectionMode, path: &str) -> Result<()> {
-    let mut session = open_session(udid, mode)?;
-    let mut afc = AfcClient::connect(session.lockdown()).context("connect AFC")?;
+pub fn stat(
+    udid: Option<&str>,
+    mode: ConnectionMode,
+    path: &str,
+    app:  Option<&str>,
+) -> Result<()> {
+    let (_session, mut afc) = connect(udid, mode, app)?;
 
     let info = afc.get_file_info(path).with_context(|| format!("stat {path}"))?;
     let type_str = match info.file_type {
@@ -63,9 +103,8 @@ pub fn stat(udid: Option<&str>, mode: ConnectionMode, path: &str) -> Result<()> 
     Ok(())
 }
 
-pub fn info(udid: Option<&str>, mode: ConnectionMode) -> Result<()> {
-    let mut session = open_session(udid, mode)?;
-    let mut afc = AfcClient::connect(session.lockdown()).context("connect AFC")?;
+pub fn info(udid: Option<&str>, mode: ConnectionMode, app: Option<&str>) -> Result<()> {
+    let (_session, mut afc) = connect(udid, mode, app)?;
 
     let dev = afc.device_info().context("device_info")?;
     println!("model:      {}", dev.model);
@@ -76,15 +115,14 @@ pub fn info(udid: Option<&str>, mode: ConnectionMode) -> Result<()> {
 }
 
 pub fn pull(
-    udid: Option<&str>,
-    mode: ConnectionMode,
+    udid:   Option<&str>,
+    mode:   ConnectionMode,
     remote: &str,
-    local: &Path,
+    local:  &Path,
+    app:    Option<&str>,
 ) -> Result<()> {
-    let mut session = open_session(udid, mode)?;
-    let mut afc = AfcClient::connect(session.lockdown()).context("connect AFC")?;
+    let (_session, mut afc) = connect(udid, mode, app)?;
 
-    // If local is an existing directory, download into it using the remote leaf name.
     let dest = if local.is_dir() {
         local.join(leaf(remote))
     } else {
@@ -102,18 +140,17 @@ pub fn pull(
 }
 
 pub fn push(
-    udid: Option<&str>,
-    mode: ConnectionMode,
-    local: &Path,
+    udid:   Option<&str>,
+    mode:   ConnectionMode,
+    local:  &Path,
     remote: &str,
+    app:    Option<&str>,
 ) -> Result<()> {
     if !local.exists() {
         bail!("{} does not exist", local.display());
     }
-    let mut session = open_session(udid, mode)?;
-    let mut afc = AfcClient::connect(session.lockdown()).context("connect AFC")?;
+    let (_session, mut afc) = connect(udid, mode, app)?;
 
-    // If remote ends with '/', or is an existing remote directory, push into it.
     let dest = if remote.ends_with('/') {
         let name = local.file_name()
             .map(|n| n.to_string_lossy().into_owned())
@@ -129,21 +166,34 @@ pub fn push(
     Ok(())
 }
 
-pub fn rm(udid: Option<&str>, mode: ConnectionMode, path: &str) -> Result<()> {
-    let mut session = open_session(udid, mode)?;
-    let mut afc = AfcClient::connect(session.lockdown()).context("connect AFC")?;
+pub fn rm(
+    udid: Option<&str>,
+    mode: ConnectionMode,
+    path: &str,
+    app:  Option<&str>,
+) -> Result<()> {
+    let (_session, mut afc) = connect(udid, mode, app)?;
     afc.remove_path(path).with_context(|| format!("rm {path}"))
 }
 
-pub fn mkdir(udid: Option<&str>, mode: ConnectionMode, path: &str) -> Result<()> {
-    let mut session = open_session(udid, mode)?;
-    let mut afc = AfcClient::connect(session.lockdown()).context("connect AFC")?;
+pub fn mkdir(
+    udid: Option<&str>,
+    mode: ConnectionMode,
+    path: &str,
+    app:  Option<&str>,
+) -> Result<()> {
+    let (_session, mut afc) = connect(udid, mode, app)?;
     afc.mkdir(path).with_context(|| format!("mkdir {path}"))
 }
 
-pub fn mv(udid: Option<&str>, mode: ConnectionMode, from: &str, to: &str) -> Result<()> {
-    let mut session = open_session(udid, mode)?;
-    let mut afc = AfcClient::connect(session.lockdown()).context("connect AFC")?;
+pub fn mv(
+    udid: Option<&str>,
+    mode: ConnectionMode,
+    from: &str,
+    to:   &str,
+    app:  Option<&str>,
+) -> Result<()> {
+    let (_session, mut afc) = connect(udid, mode, app)?;
     afc.rename(from, to).with_context(|| format!("mv {from} -> {to}"))
 }
 
@@ -163,7 +213,3 @@ fn human_size(bytes: u64) -> String {
     }
     if i == 0 { format!("{bytes} B") } else { format!("{v:.1} {}", UNITS[i]) }
 }
-
-// Keep PathBuf in scope for the function signatures.
-#[allow(dead_code)]
-fn _ensure_pathbuf(_: PathBuf) {}

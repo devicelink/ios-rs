@@ -26,7 +26,7 @@ Comparison against [pymobiledevice3](https://github.com/doronz88/pymobiledevice3
 - [x] `afc mkdir <path>` — create directory
 - [x] `afc mv <from> <to>` — rename / move
 - [ ] AFC shell — interactive readline-based file browser
-- [ ] Per-app container file access (`afc --app <bundle-id>`)
+- [x] Per-app container file access (`afc --app <bundle-id>`) — implemented via house_arrest shim (RSD) / lockdownd; requires developer mode on iOS 17+
 
 ## Syslog & Logging
 
