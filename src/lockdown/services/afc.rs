@@ -164,6 +164,88 @@ impl AfcClient {
         AfcClient { stream, packet_num: 0 }
     }
 
+    /// Connect to an app's full sandbox container via `com.apple.mobile.house_arrest`.
+    ///
+    /// Uses the legacy lockdownd path.  On iOS 17.4+ you should call
+    /// [`Self::connect_app_shim`] with a stream obtained from
+    /// `DeviceSession::connect_rsd_shim("com.apple.mobile.house_arrest.shim.remote")`.
+    pub fn connect_app(session: &mut LockdownSession, bundle_id: &str) -> Result<Self, Error> {
+        let stream = session.connect_service("com.apple.mobile.house_arrest")?;
+        Self::house_arrest_on_stream(stream, "VendContainer", bundle_id)
+    }
+
+    /// Connect to an app's `Documents/` directory — legacy lockdownd path.
+    pub fn connect_app_documents(
+        session:   &mut LockdownSession,
+        bundle_id: &str,
+    ) -> Result<Self, Error> {
+        let stream = session.connect_service("com.apple.mobile.house_arrest")?;
+        Self::house_arrest_on_stream(stream, "VendDocuments", bundle_id)
+    }
+
+    /// Connect to an app's full sandbox container over an already-connected
+    /// `MuxSocket` (e.g. from
+    /// `DeviceSession::connect_rsd_shim("com.apple.mobile.house_arrest.shim.remote")`).
+    ///
+    /// Use this on iOS 17.4+ where the house_arrest service is only reachable
+    /// via the RSD shim.
+    pub fn connect_app_shim(stream: MuxSocket, bundle_id: &str) -> Result<Self, Error> {
+        Self::house_arrest_on_stream(stream, "VendContainer", bundle_id)
+    }
+
+    /// Like [`Self::connect_app_shim`] but scoped to `Documents/` only.
+    pub fn connect_app_documents_shim(stream: MuxSocket, bundle_id: &str) -> Result<Self, Error> {
+        Self::house_arrest_on_stream(stream, "VendDocuments", bundle_id)
+    }
+
+    fn house_arrest_on_stream(
+        mut stream: MuxSocket,
+        command:    &str,
+        bundle_id:  &str,
+    ) -> Result<Self, Error> {
+        // Send the VendContainer / VendDocuments plist
+        let mut body = Vec::new();
+        plist::to_writer_xml(&mut body, &plist::Value::Dictionary({
+            let mut d = plist::Dictionary::new();
+            d.insert("Command".into(),    plist::Value::String(command.into()));
+            d.insert("Identifier".into(), plist::Value::String(bundle_id.into()));
+            d
+        }))?;
+        let len = body.len() as u32;
+        stream.write_all(&len.to_be_bytes())?;
+        stream.write_all(&body)?;
+        stream.flush()?;
+
+        // Read the response (4-byte BE length prefix + plist).
+        // iOS may close the TLS connection without a close_notify after the
+        // response — treat UnexpectedEof as EOF rather than an error.
+        let mut len_buf = [0u8; 4];
+        read_exact_eof_ok(&mut stream, &mut len_buf)?;
+        let resp_len = u32::from_be_bytes(len_buf) as usize;
+        if resp_len == 0 || resp_len > 1024 * 1024 {
+            return Err(Error::Afc(format!(
+                "house_arrest({bundle_id}): service closed without response. \
+                 On iOS 17.4+ use connect_app_shim() with the RSD shim stream."
+            )));
+        }
+        let mut resp_body = vec![0u8; resp_len];
+        read_exact_eof_ok(&mut stream, &mut resp_body)?;
+
+        let resp: plist::Value = plist::from_bytes(&resp_body)?;
+        if let Some(err) = resp.as_dictionary()
+            .and_then(|d| d.get("Error"))
+            .and_then(|v| v.as_string())
+        {
+            let desc = resp.as_dictionary()
+                .and_then(|d| d.get("ErrorDescription"))
+                .and_then(|v| v.as_string())
+                .unwrap_or(err);
+            return Err(Error::Afc(format!("house_arrest({bundle_id}): {desc}")));
+        }
+
+        Ok(AfcClient { stream, packet_num: 0 })
+    }
+
     // ── directory operations ─────────────────────────────────────────────────
 
     /// List the names of entries in `path`.
@@ -565,5 +647,26 @@ fn read_exact(s: &mut MuxSocket, buf: &mut [u8]) -> Result<(), Error> {
         if n == 0 { return Err(Error::Closed); }
         filled += n;
     }
+    Ok(())
+}
+
+/// Like `read_exact` but treats `UnexpectedEof` as a clean EOF.
+///
+/// iOS TLS services often close the connection without sending a TLS
+/// close_notify alert.  rustls surfaces this as `ErrorKind::UnexpectedEof`;
+/// we treat it the same as `n == 0` so callers can inspect how many bytes
+/// were actually read.
+fn read_exact_eof_ok(s: &mut MuxSocket, buf: &mut [u8]) -> Result<(), Error> {
+    let mut filled = 0;
+    while filled < buf.len() {
+        match s.read(&mut buf[filled..]) {
+            Ok(0) => break,
+            Ok(n) => filled += n,
+            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
+            Err(e) => return Err(Error::Io(e)),
+        }
+    }
+    // Zero the unread tail so callers can detect a short read.
+    buf[filled..].fill(0);
     Ok(())
 }

@@ -335,3 +335,63 @@ fn integration_rename() {
 
     afc.remove_path(dst).expect("cleanup");
 }
+
+// ── house-arrest / per-app container tests ────────────────────────────────────
+//
+// Set APP_BUNDLE_ID to the bundle ID of any installed user app before running.
+// Requires developer mode to be enabled on the device (iOS 17+).
+// Example:
+//   APP_BUNDLE_ID=com.audible.iphone cargo test --test afc -- --ignored
+
+#[test]
+#[ignore = "requires connected iOS device and APP_BUNDLE_ID env var"]
+fn integration_house_arrest_list_root() {
+    setup();
+    use ios_rs::tunnel::{ConnectionMode, DeviceSession};
+    use ios_rs::usbmux::Connection;
+
+    let bundle_id = std::env::var("APP_BUNDLE_ID")
+        .expect("set APP_BUNDLE_ID to an installed user-app bundle ID");
+
+    let mut conn   = Connection::open().expect("usbmux connect");
+    let device     = conn.list_devices().expect("list devices")
+        .into_iter().next().expect("no device connected");
+    let mut session = DeviceSession::open(device, ConnectionMode::Auto)
+        .expect("device session");
+
+    let mut afc = AfcClient::connect_app(session.lockdown(), &bundle_id)
+        .expect("house_arrest connect");
+
+    let entries = afc.list_dir("/").expect("list /");
+    println!("app container /: {entries:?}");
+    assert!(entries.iter().any(|e| e == "Documents"),
+        "Documents not found in app container root: {entries:?}");
+}
+
+#[test]
+#[ignore = "requires connected iOS device and APP_BUNDLE_ID env var"]
+fn integration_house_arrest_write_read_remove() {
+    setup();
+    use ios_rs::tunnel::{ConnectionMode, DeviceSession};
+    use ios_rs::usbmux::Connection;
+
+    let bundle_id = std::env::var("APP_BUNDLE_ID")
+        .expect("set APP_BUNDLE_ID to an installed user-app bundle ID");
+
+    let mut conn   = Connection::open().expect("usbmux connect");
+    let device     = conn.list_devices().expect("list devices")
+        .into_iter().next().expect("no device connected");
+    let mut session = DeviceSession::open(device, ConnectionMode::Auto)
+        .expect("device session");
+
+    let mut afc = AfcClient::connect_app(session.lockdown(), &bundle_id)
+        .expect("house_arrest connect");
+
+    let path    = "/Documents/ios_rs_test.bin";
+    let payload = b"house-arrest test payload";
+
+    afc.put_file(path, payload).expect("put_file");
+    let data = afc.read_file(path).expect("read_file");
+    assert_eq!(data, payload);
+    afc.remove_path(path).expect("remove");
+}

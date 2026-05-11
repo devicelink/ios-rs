@@ -169,17 +169,26 @@ enum AfcAction {
         /// Path on the device (default: /)
         #[arg(default_value = "/")]
         path: String,
+        /// Access an app's container instead of the media partition
+        #[arg(long)]
+        app: Option<String>,
         #[arg(long)]
         udid: Option<String>,
     },
     /// Print metadata for a file or directory
     Stat {
         path: String,
+        /// Access an app's container instead of the media partition
+        #[arg(long)]
+        app: Option<String>,
         #[arg(long)]
         udid: Option<String>,
     },
     /// Print device file-system info (model, free space)
     Info {
+        /// Access an app's container instead of the media partition
+        #[arg(long)]
+        app: Option<String>,
         #[arg(long)]
         udid: Option<String>,
     },
@@ -189,6 +198,9 @@ enum AfcAction {
         remote: String,
         /// Local destination path
         local: String,
+        /// Access an app's container instead of the media partition
+        #[arg(long)]
+        app: Option<String>,
         #[arg(long)]
         udid: Option<String>,
     },
@@ -198,18 +210,27 @@ enum AfcAction {
         local: String,
         /// Remote destination path on the device
         remote: String,
+        /// Access an app's container instead of the media partition
+        #[arg(long)]
+        app: Option<String>,
         #[arg(long)]
         udid: Option<String>,
     },
     /// Remove a file or directory
     Rm {
         path: String,
+        /// Access an app's container instead of the media partition
+        #[arg(long)]
+        app: Option<String>,
         #[arg(long)]
         udid: Option<String>,
     },
     /// Create a directory
     Mkdir {
         path: String,
+        /// Access an app's container instead of the media partition
+        #[arg(long)]
+        app: Option<String>,
         #[arg(long)]
         udid: Option<String>,
     },
@@ -217,6 +238,9 @@ enum AfcAction {
     Mv {
         from: String,
         to: String,
+        /// Access an app's container instead of the media partition
+        #[arg(long)]
+        app: Option<String>,
         #[arg(long)]
         udid: Option<String>,
     },
@@ -338,22 +362,22 @@ fn main() -> Result<()> {
                 &xctest_config,
             ),
         Cmd::Afc { action } => match action {
-            AfcAction::Ls   { long, path, udid } =>
-                cmd::afc::ls(udid.as_deref(), mode, &path, long),
-            AfcAction::Stat { path, udid } =>
-                cmd::afc::stat(udid.as_deref(), mode, &path),
-            AfcAction::Info { udid } =>
-                cmd::afc::info(udid.as_deref(), mode),
-            AfcAction::Pull { remote, local, udid } =>
-                cmd::afc::pull(udid.as_deref(), mode, &remote, std::path::Path::new(&local)),
-            AfcAction::Push { local, remote, udid } =>
-                cmd::afc::push(udid.as_deref(), mode, std::path::Path::new(&local), &remote),
-            AfcAction::Rm   { path, udid } =>
-                cmd::afc::rm(udid.as_deref(), mode, &path),
-            AfcAction::Mkdir { path, udid } =>
-                cmd::afc::mkdir(udid.as_deref(), mode, &path),
-            AfcAction::Mv   { from, to, udid } =>
-                cmd::afc::mv(udid.as_deref(), mode, &from, &to),
+            AfcAction::Ls   { long, path, app, udid } =>
+                cmd::afc::ls(udid.as_deref(), mode, &path, long, app.as_deref()),
+            AfcAction::Stat { path, app, udid } =>
+                cmd::afc::stat(udid.as_deref(), mode, &path, app.as_deref()),
+            AfcAction::Info { app, udid } =>
+                cmd::afc::info(udid.as_deref(), mode, app.as_deref()),
+            AfcAction::Pull { remote, local, app, udid } =>
+                cmd::afc::pull(udid.as_deref(), mode, &remote, std::path::Path::new(&local), app.as_deref()),
+            AfcAction::Push { local, remote, app, udid } =>
+                cmd::afc::push(udid.as_deref(), mode, std::path::Path::new(&local), &remote, app.as_deref()),
+            AfcAction::Rm   { path, app, udid } =>
+                cmd::afc::rm(udid.as_deref(), mode, &path, app.as_deref()),
+            AfcAction::Mkdir { path, app, udid } =>
+                cmd::afc::mkdir(udid.as_deref(), mode, &path, app.as_deref()),
+            AfcAction::Mv   { from, to, app, udid } =>
+                cmd::afc::mv(udid.as_deref(), mode, &from, &to, app.as_deref()),
         },
         Cmd::Apps { action }  => match action {
             AppsAction::List { udid, system, all } =>
