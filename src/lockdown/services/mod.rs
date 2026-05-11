@@ -1,6 +1,7 @@
 pub mod afc;
 pub mod installation_proxy;
 pub mod springboard;
+pub mod syslog;
 
 pub use afc::{
     AfcClient, AfcDeviceInfo, FileInfo, FileType,
@@ -8,3 +9,4 @@ pub use afc::{
 };
 pub use installation_proxy::{AppInfo, AppType, InstallationProxy};
 pub use springboard::{Orientation, SpringBoardClient};
+pub use syslog::{SyslogClient, SyslogEntry};

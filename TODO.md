@@ -30,7 +30,7 @@ Comparison against [pymobiledevice3](https://github.com/doronz88/pymobiledevice3
 
 ## Syslog & Logging
 
-- [ ] Stream live syslog (`syslog live`)
+- [x] Stream live syslog (`ios syslog` — auto-routes to RSD shim on iOS 17.4+)
 - [ ] Stream oslog via DVT instruments protocol
 - [ ] Collect / dump syslog to file
 
