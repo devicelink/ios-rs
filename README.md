@@ -74,28 +74,32 @@ Interact with iOS devices via usbmuxd
 Usage: ios [OPTIONS] <COMMAND>
 
 Commands:
-  devices      List connected iOS devices
-  info         Print device information from lockdownd
-  services     List available services on the device
-  relay        Forward a local TCP port to a device service port
-  watch        Watch for device attach/detach events
-  screenshot   Capture a screenshot (PNG)
-  reboot       Reboot the device
-  shutdown     Shut down the device
-  diagnostics  Device diagnostics (battery, full dump)
-  syslog       Stream live syslog output from the device (Ctrl-C to stop)
-  version      Show iOS version and available connection paths
-  afc          Browse and transfer files on the device media partition (DCIM, Books, …)
-  apps         App management (list, install, uninstall)
-  orientation  Get or set screen orientation (set requires pre-installed OrientationHelper XCTest)
-  lang         Get or set device language and locale
-  date         Get or set device timezone and clock
-  rsd          Show RSD service catalogue via CDTunnel (iOS 17.4+)
-  mounter      Mount the personalized Developer Disk Image (unlocks Instruments / dtservicehub)
-  perf         Live performance monitoring (CPU, RAM per process) via Instruments sysmontap
-  runtest      Run XCTest bundle (UI or unit tests) on iOS 17.4+
-  runwda       Start WebDriverAgent on iOS 17.4+
-  help         Print this message or the help of the given subcommand(s)
+  devices       List connected iOS devices
+  info          Print device information from lockdownd
+  services      List available services on the device
+  relay         Forward a local TCP port to a device service port
+  watch         Watch for device attach/detach events
+  screenshot    Capture a screenshot (PNG)
+  reboot        Reboot the device
+  shutdown      Shut down the device
+  diagnostics   Device diagnostics (battery, full dump)
+  syslog        Stream live syslog output from the device (Ctrl-C to stop)
+  crash         Crash report management
+  pcap          Live packet capture (writes .pcap; pipe to `wireshark -k -i -`)
+  notification  Darwin notification proxy
+  devicename    Get or set the device name
+  version       Show iOS version and available connection paths
+  afc           Browse and transfer files on the device media partition (DCIM, Books, …)
+  apps          App management (list, install, uninstall)
+  orientation   Get or set screen orientation (set requires pre-installed OrientationHelper XCTest)
+  lang          Get or set device language and locale
+  date          Get or set device timezone and clock
+  rsd           Show RSD service catalogue via CDTunnel (iOS 17.4+)
+  mounter       Mount the personalized Developer Disk Image (unlocks Instruments / dtservicehub)
+  perf          Live performance monitoring (CPU, RAM per process) via Instruments sysmontap
+  runtest       Run XCTest bundle (UI or unit tests) on iOS 17.4+
+  runwda        Start WebDriverAgent on iOS 17.4+
+  help          Print this message or the help of the given subcommand(s)
 ```
 
 ### `ios devices`

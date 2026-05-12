@@ -12,6 +12,7 @@ pub fn run(
     process: Option<&str>,
     filter:  Option<&str>,
     json:    bool,
+    output:  Option<&str>,
 ) -> Result<()> {
     let mut session = open_session(udid, mode)?;
 
@@ -24,18 +25,25 @@ pub fn run(
         SyslogClient::connect(session.lockdown()).context("connect syslog")?
     };
 
-    let stdout = std::io::stdout();
+    let mut file_out;
+    let mut stdout_out;
+    let out: &mut dyn Write = if let Some(path) = output {
+        file_out = std::io::BufWriter::new(
+            std::fs::File::create(path).with_context(|| format!("create {path}"))?
+        );
+        &mut file_out
+    } else {
+        stdout_out = std::io::BufWriter::new(std::io::stdout());
+        &mut stdout_out
+    };
+
     client.stream(|entry| {
         if !matches_filters(&entry, process, filter) {
             return true;
         }
         let line = if json { to_json(&entry) } else { entry.raw.clone() };
-        {
-            let mut out = stdout.lock();
-            let _ = writeln!(out, "{line}");
-            let _ = out.flush();
-        }
-        true
+        let ok = writeln!(out, "{line}").and_then(|_| out.flush()).is_ok();
+        ok
     })
     .context("syslog stream")?;
 
