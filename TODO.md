@@ -10,7 +10,7 @@ Comparison against [pymobiledevice3](https://github.com/doronz88/pymobiledevice3
 - [x] Reboot device (`ios reboot`)
 - [x] Shut down device (`ios shutdown`)
 - [ ] Erase / factory reset
-- [ ] Device name — get / set
+- [x] Device name — get / set (`ios devicename [new-name]`)
 - [ ] Wi-Fi connections — enable / disable
 - [ ] MobileGestalt key queries (`mobilegestalt <key>`)
 - [ ] Device preparation / first-run setup (supervised enrolment)
@@ -33,7 +33,7 @@ Comparison against [pymobiledevice3](https://github.com/doronz88/pymobiledevice3
 
 - [x] Stream live syslog (`ios syslog` — auto-routes to RSD shim on iOS 17.4+)
 - [ ] Stream oslog via DVT instruments protocol
-- [ ] Collect / dump syslog to file
+- [x] Collect / dump syslog to file (`ios syslog --output <file>`)
 
 ## Screenshot & Screen Recording
 
@@ -56,9 +56,9 @@ Comparison against [pymobiledevice3](https://github.com/doronz88/pymobiledevice3
 
 ## Crash Reports
 
-- [ ] List crash reports on device
-- [ ] Download / copy crash reports
-- [ ] Delete crash reports
+- [x] List crash reports (`ios crash ls [--long]`)
+- [x] Download crash report (`ios crash pull <name> [local]`)
+- [x] Delete crash report (`ios crash rm <name>`)
 - [ ] Parse crash report (symbolicate)
 - [ ] Watch for new crash reports
 
@@ -72,15 +72,14 @@ Comparison against [pymobiledevice3](https://github.com/doronz88/pymobiledevice3
 
 ## Network
 
-- [ ] Packet capture (PCAP / Wireshark live feed)
+- [x] Packet capture (`ios pcap [-o file]`) — implemented; requires developer mode on iOS 17.4+ (pcapd shim does not stream without it)
 - [ ] HTTP proxy — install / remove proxy configuration profile
 - [ ] Retrieve device IP address
 
 ## Notifications
 
-- [ ] Post Darwin notification by name
-- [ ] Observe Darwin notification(s)
-- [ ] Observe all notifications
+- [x] Post Darwin notification (`ios notification post <name>`)
+- [x] Observe Darwin notifications (`ios notification observe [<name>]`)
 
 ## Debugging
 

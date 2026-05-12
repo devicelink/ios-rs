@@ -91,6 +91,38 @@ enum Cmd {
         /// Output newline-delimited JSON instead of raw log lines
         #[arg(long)]
         json: bool,
+        /// Save output to a file instead of stdout
+        #[arg(short, long)]
+        output: Option<String>,
+        #[arg(long)]
+        udid: Option<String>,
+    },
+
+    /// Crash report management
+    Crash {
+        #[command(subcommand)]
+        action: CrashAction,
+    },
+
+    /// Live packet capture (writes .pcap; pipe to `wireshark -k -i -`)
+    Pcap {
+        /// Output file (omit to write to stdout)
+        #[arg(short, long)]
+        output: Option<String>,
+        #[arg(long)]
+        udid: Option<String>,
+    },
+
+    /// Darwin notification proxy
+    Notification {
+        #[command(subcommand)]
+        action: NotificationAction,
+    },
+
+    /// Get or set the device name
+    Devicename {
+        /// New device name to set (omit to print current name)
+        name: Option<String>,
         #[arg(long)]
         udid: Option<String>,
     },
@@ -196,6 +228,50 @@ enum Cmd {
         test_runner_bundle_id: String,
         #[arg(long = "xctestconfig", default_value = "WebDriverAgentRunner.xctest")]
         xctest_config: String,
+        #[arg(long)]
+        udid: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum CrashAction {
+    /// List crash reports on the device
+    Ls {
+        #[arg(short, long)]
+        long: bool,
+        #[arg(long)]
+        udid: Option<String>,
+    },
+    /// Download a crash report
+    Pull {
+        /// Report filename (as shown by `crash ls`)
+        name: String,
+        /// Local destination path (defaults to the filename)
+        local: Option<String>,
+        #[arg(long)]
+        udid: Option<String>,
+    },
+    /// Delete a crash report from the device
+    Rm {
+        name: String,
+        #[arg(long)]
+        udid: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum NotificationAction {
+    /// Post a Darwin notification
+    Post {
+        /// Notification name (e.g. com.apple.springboard.hasBlankedScreen)
+        name: String,
+        #[arg(long)]
+        udid: Option<String>,
+    },
+    /// Observe Darwin notifications (Ctrl-C to stop)
+    Observe {
+        /// Notification name to watch (omit to observe all)
+        name: Option<String>,
         #[arg(long)]
         udid: Option<String>,
     },
@@ -385,8 +461,35 @@ fn main() -> Result<()> {
             DiagnosticsAction::Battery { udid } => cmd::diagnostics::battery(udid.as_deref(), mode),
             DiagnosticsAction::All     { udid } => cmd::diagnostics::all(udid.as_deref(), mode),
         },
-        Cmd::Syslog { process, filter, json, udid } =>
-            cmd::syslog::run(udid.as_deref(), mode, process.as_deref(), filter.as_deref(), json),
+        Cmd::Syslog { process, filter, json, output, udid } =>
+            cmd::syslog::run(udid.as_deref(), mode, process.as_deref(), filter.as_deref(), json, output.as_deref()),
+        Cmd::Crash { action } => match action {
+            CrashAction::Ls   { long, udid }       => cmd::crash::ls(udid.as_deref(), mode, long),
+            CrashAction::Pull { name, local, udid } => cmd::crash::pull(udid.as_deref(), mode, &name, local.as_deref()),
+            CrashAction::Rm   { name, udid }        => cmd::crash::rm(udid.as_deref(), mode, &name),
+        },
+        Cmd::Pcap { output, udid } =>
+            cmd::pcap::run(udid.as_deref(), mode, output.as_deref()),
+        Cmd::Notification { action } => match action {
+            NotificationAction::Post    { name, udid }        => cmd::notification::post(udid.as_deref(), mode, &name),
+            NotificationAction::Observe { name, udid }        => cmd::notification::observe(udid.as_deref(), mode, name.as_deref()),
+        },
+        Cmd::Devicename { name, udid } => {
+            let mut session = cmd::open_session(udid.as_deref(), mode)?;
+            match name {
+                None => {
+                    let v = session.lockdown().get_value(None, "DeviceName")
+                        .map_err(|e| anyhow::anyhow!("{e}"))?;
+                    println!("{}", v.as_string().unwrap_or("(unknown)"));
+                }
+                Some(n) => {
+                    session.lockdown().set_value(None, "DeviceName", plist::Value::String(n.clone()))
+                        .map_err(|e| anyhow::anyhow!("{e}"))?;
+                    eprintln!("device name set to {n:?}");
+                }
+            }
+            Ok(())
+        }
         Cmd::Version { udid } => cmd::version::run(udid.as_deref()),
         Cmd::Orientation { action } => match action {
             OrientationAction::Get { udid } =>

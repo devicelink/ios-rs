@@ -1,6 +1,9 @@
 pub mod afc;
 pub mod apps;
+pub mod crash;
 pub mod diagnostics;
+pub mod notification;
+pub mod pcap;
 pub mod screenshot;
 pub mod syslog;
 pub mod devices;
