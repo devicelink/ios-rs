@@ -145,12 +145,18 @@ enum Cmd {
     },
 
     /// Pair with the device.  Without flags: shows Trust dialog on device.
-    /// With --supervision-cert + --supervision-key: pairs silently (supervised devices).
+    /// Supervised mode (no dialog): use --supervision-p12 or --supervision-cert+--supervision-key.
     Pair {
+        /// P12/PFX file containing the supervision certificate and private key.
+        #[arg(long)]
+        supervision_p12: Option<String>,
+        /// Password for the P12 file (default: empty string).
+        #[arg(long)]
+        supervision_password: Option<String>,
         /// Supervision certificate file (DER or PEM). Requires --supervision-key.
         #[arg(long)]
         supervision_cert: Option<String>,
-        /// Supervision RSA private key file (PEM PKCS#8 or PKCS#1). Requires --supervision-cert.
+        /// Supervision RSA private key file (PEM PKCS#8/PKCS#1 or DER). Requires --supervision-cert.
         #[arg(long)]
         supervision_key: Option<String>,
         #[arg(long)]
@@ -555,8 +561,14 @@ fn main() -> Result<()> {
         Cmd::Oslog { process, level, json, udid } =>
             cmd::oslog::run(udid.as_deref(), process.as_deref(), level.as_deref(), json),
         Cmd::Deviceip { udid } => cmd::deviceip::run(udid.as_deref()),
-        Cmd::Pair   { udid, supervision_cert, supervision_key } =>
-            cmd::pair::pair(udid.as_deref(), supervision_cert.as_deref(), supervision_key.as_deref()),
+        Cmd::Pair { udid, supervision_p12, supervision_password, supervision_cert, supervision_key } =>
+            cmd::pair::pair(
+                udid.as_deref(),
+                supervision_cert.as_deref(),
+                supervision_key.as_deref(),
+                supervision_p12.as_deref(),
+                supervision_password.as_deref(),
+            ),
         Cmd::Unpair { udid } => cmd::pair::unpair(udid.as_deref()),
         Cmd::Devicename { name, udid } => {
             let mut session = cmd::open_session(udid.as_deref(), mode)?;

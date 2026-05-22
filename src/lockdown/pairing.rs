@@ -130,8 +130,7 @@ pub fn pair_supervised(
     supervision_cert_der: &[u8],
     supervision_key_pem:  &[u8],
 ) -> Result<(), Error> {
-    // Parse supervision private key (PKCS8 or PKCS1 PEM)
-    let supervision_key = parse_rsa_key_pem(supervision_key_pem)?;
+    let supervision_key = parse_rsa_key_bytes(supervision_key_pem)?;
 
     let mut usbmux = MuxConn::open()?;
     let buid = usbmux.read_buid().map_err(|e| err(format!("read BUID: {e}")))?;
@@ -655,16 +654,19 @@ fn extract_pairing_challenge(resp: &plist::Dictionary) -> Result<Vec<u8>, Error>
     }
 }
 
-/// Parse an RSA private key from PEM — accepts PKCS#8 or PKCS#1 format.
-fn parse_rsa_key_pem(pem_bytes: &[u8]) -> Result<RsaPrivateKey, Error> {
-    let s = std::str::from_utf8(pem_bytes)
-        .map_err(|_| err("supervision key not valid UTF-8".into()))?;
-    // Try PKCS#8 first, then fall back to PKCS#1
-    if let Ok(k) = rsa::pkcs8::DecodePrivateKey::from_pkcs8_pem(s) {
-        return Ok(k);
+/// Parse an RSA private key from bytes — accepts PEM (PKCS#8 or PKCS#1) or DER (PKCS#8 or PKCS#1).
+pub(crate) fn parse_rsa_key_bytes(bytes: &[u8]) -> Result<RsaPrivateKey, Error> {
+    // PEM path
+    if let Ok(s) = std::str::from_utf8(bytes) {
+        if s.contains("-----") {
+            if let Ok(k) = rsa::pkcs8::DecodePrivateKey::from_pkcs8_pem(s) { return Ok(k); }
+            if let Ok(k) = rsa::pkcs1::DecodeRsaPrivateKey::from_pkcs1_pem(s) { return Ok(k); }
+        }
     }
-    rsa::pkcs1::DecodeRsaPrivateKey::from_pkcs1_pem(s)
-        .map_err(|e| err(format!("parse supervision key: {e}")))
+    // DER path — PKCS#8 first, then PKCS#1
+    if let Ok(k) = rsa::pkcs8::DecodePrivateKey::from_pkcs8_der(bytes) { return Ok(k); }
+    rsa::pkcs1::DecodeRsaPrivateKey::from_pkcs1_der(bytes)
+        .map_err(|e| err(format!("parse supervision key (tried PEM+PKCS8+PKCS1 DER): {e}")))
 }
 
 /// Build a PKCS7 SignedData (CMS) message signing `content` with `key` and `cert_der`.
