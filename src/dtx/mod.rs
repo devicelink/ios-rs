@@ -472,6 +472,28 @@ impl DtxConn {
             .map(|m| m.payload)
     }
 
+    /// Like `call` but returns the full reply message (payload + aux).
+    pub fn call_full(
+        &self,
+        channel: i32,
+        selector: &str,
+        aux: &[AuxValue],
+    ) -> Result<DtxMessage, Error> {
+        let id = self.alloc_id();
+        let (tx, rx) = mpsc::sync_channel(1);
+        self.waiters.lock().unwrap().insert(id, tx);
+
+        let frame = encode_call(id, 0, channel, true, selector, aux);
+        self.write_bytes(&frame)?;
+
+        rx.recv_timeout(self.timeout).map_err(|e| match e {
+            mpsc::RecvTimeoutError::Timeout => {
+                Error::Protocol(format!("DTX call '{selector}' timed out"))
+            }
+            mpsc::RecvTimeoutError::Disconnected => Error::Closed,
+        })
+    }
+
     /// Send a method call without waiting for a reply.
     pub fn call_async(&self, channel: i32, selector: &str, aux: &[AuxValue]) -> Result<(), Error> {
         let id    = self.alloc_id();

@@ -37,9 +37,10 @@ Comparison against [pymobiledevice3](https://github.com/doronz88/pymobiledevice3
 
 ## Screenshot & Screen Recording
 
-- [ ] Single screenshot capture — `com.apple.mobile.screenshotr` (lockdownd) works on iOS < 17;
-      iOS 17.4+ requires `com.apple.corecaptured.remoteservice` (remote-XPC, not yet implemented)
-- [ ] Streaming screenshot mode
+- [x] Single screenshot capture — `com.apple.mobile.screenshotr` on iOS < 17; iOS 17.4+ via
+      `dtservicehub` → `com.apple.instruments.server.services.screenshot` → `takeScreenshot`
+      (both paths implemented; iOS 17.4+ requires **Developer Mode** enabled on device)
+- [ ] Streaming screenshot mode (MJPEG via repeated takeScreenshot calls)
 
 ## Location Spoofing
 
