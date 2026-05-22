@@ -90,7 +90,7 @@ Commands:
   location      Simulate or clear device GPS location (requires Developer Mode)
   oslog         Stream structured os_log output (Ctrl-C to stop)
   deviceip      Show device IP / network addresses
-  pair          Pair with the device.  Without flags: shows Trust dialog on device. With --supervision-cert + --supervision-key: pairs silently (supervised devices)
+  pair          Pair with the device.  Without flags: shows Trust dialog on device. Supervised mode (no dialog): use --supervision-p12 or --supervision-cert+--supervision-key
   unpair        Remove the pairing record for this device
   devicename    Get or set the device name
   version       Show iOS version and available connection paths
