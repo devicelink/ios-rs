@@ -85,7 +85,6 @@ Commands:
   diagnostics   Device diagnostics (battery, full dump)
   syslog        Stream live syslog output from the device (Ctrl-C to stop)
   crash         Crash report management
-  pcap          Live packet capture (writes .pcap; pipe to `wireshark -k -i -`)
   notification  Darwin notification proxy
   devicename    Get or set the device name
   version       Show iOS version and available connection paths

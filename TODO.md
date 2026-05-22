@@ -73,7 +73,7 @@ Comparison against [pymobiledevice3](https://github.com/doronz88/pymobiledevice3
 
 ## Network
 
-- [x] Packet capture (`ios pcap [-o file]`) — implemented; requires developer mode on iOS 17.4+ (pcapd shim does not stream without it)
+- [ ] Packet capture — `com.apple.pcapd.shim.remote` connects but sends no data without a mounted personalized DDI on iOS 17.4+
 - [ ] HTTP proxy — install / remove proxy configuration profile
 - [ ] Retrieve device IP address
 
