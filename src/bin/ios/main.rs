@@ -104,14 +104,6 @@ enum Cmd {
         action: CrashAction,
     },
 
-    /// Live packet capture (writes .pcap; pipe to `wireshark -k -i -`)
-    Pcap {
-        /// Output file (omit to write to stdout)
-        #[arg(short, long)]
-        output: Option<String>,
-        #[arg(long)]
-        udid: Option<String>,
-    },
 
     /// Darwin notification proxy
     Notification {
@@ -468,8 +460,6 @@ fn main() -> Result<()> {
             CrashAction::Pull { name, local, udid } => cmd::crash::pull(udid.as_deref(), mode, &name, local.as_deref()),
             CrashAction::Rm   { name, udid }        => cmd::crash::rm(udid.as_deref(), mode, &name),
         },
-        Cmd::Pcap { output, udid } =>
-            cmd::pcap::run(udid.as_deref(), mode, output.as_deref()),
         Cmd::Notification { action } => match action {
             NotificationAction::Post    { name, udid }        => cmd::notification::post(udid.as_deref(), mode, &name),
             NotificationAction::Observe { name, udid }        => cmd::notification::observe(udid.as_deref(), mode, name.as_deref()),

@@ -1,0 +1,11 @@
+2026-05-22 14:52:07 INFO  (LoggingInitialization) Using log config file: jar:file:/Users/aluedeke/Downloads/ghidra_11.2.1_PUBLIC/Ghidra/Framework/Generic/lib/Generic.jar!/generic.log4j.xml  
+2026-05-22 14:52:07 INFO  (LoggingInitialization) Using log file: /Users/aluedeke/Development/source/aluedeke/devicelink/ios-rs/re-work/corecaptured-screenshot/output/ghidra_import.log  
+2026-05-22 14:52:07 INFO  (Preferences) Loading user preferences: /Users/aluedeke/Library/ghidra/ghidra_11.2.1_PUBLIC/preferences  
+2026-05-22 14:52:07 INFO  (ClassSearcher) Searching for classes...  
+2026-05-22 14:52:08 INFO  (ClassSearcher) Class search complete (887 ms)  
+2026-05-22 14:52:08 INFO  (SSLContextInitializer) Initializing SSL Context  
+2026-05-22 14:52:08 INFO  (SecureRandomFactory) Initializing Random Number Generator...  
+2026-05-22 14:52:08 INFO  (SecureRandomFactory) Random Number Generator initialization complete: NativePRNGNonBlocking  
+2026-05-22 14:52:08 INFO  (ApplicationTrustManagerFactory) Trust manager disabled, cacerts have not been set  
+2026-05-22 14:52:08 INFO  (FileCacheMaintenanceDaemon) Starting cache cleanup: /var/tmp/aluedeke-ghidra/fscache2  
+2026-05-22 14:52:08 INFO  (FileCacheMaintenanceDaemon) Finished cache cleanup, estimated storage used: 0  
