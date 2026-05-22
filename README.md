@@ -90,6 +90,8 @@ Commands:
   location      Simulate or clear device GPS location (requires Developer Mode)
   oslog         Stream structured os_log output (Ctrl-C to stop)
   deviceip      Show device IP / network addresses
+  pair          Pair with the device (accept Trust dialog on device first)
+  unpair        Remove the pairing record for this device
   devicename    Get or set the device name
   version       Show iOS version and available connection paths
   afc           Browse and transfer files on the device media partition (DCIM, Books, …)

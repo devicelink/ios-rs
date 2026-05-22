@@ -438,6 +438,16 @@ impl LockdownSession {
         self.stream = Stream::Tls(Box::new(StreamOwned::new(conn, sock)));
         Ok(())
     }
+
+    /// Send a raw plist value (used by pairing — bypasses the typed Request struct).
+    pub fn send_raw(&mut self, value: &plist::Value) -> Result<(), Error> {
+        send_plist(&mut self.stream, value)
+    }
+
+    /// Receive the next raw plist value.
+    pub fn recv_raw(&mut self) -> Result<plist::Value, Error> {
+        recv_plist(&mut self.stream)
+    }
 }
 
 impl Drop for LockdownSession {

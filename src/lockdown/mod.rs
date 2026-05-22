@@ -1,5 +1,6 @@
 mod error;
 mod pair_record;
+pub mod pairing;
 mod session;
 mod types;
 pub mod services;

@@ -19,7 +19,7 @@ default  = ["tunnel", "cli"]
 cli      = ["tunnel", "xctest", "dep:clap", "dep:comfy-table", "dep:anyhow", "dep:ureq"]
 xctest   = ["tunnel"]
 sim      = []
-lockdown = ["dep:rustls", "dep:rustls-pemfile"]
+lockdown = ["dep:rustls", "dep:rustls-pemfile", "dep:rsa", "dep:sha1"]
 tunnel   = [
     "lockdown",
     "dep:smoltcp",
@@ -46,6 +46,8 @@ ureq         = { version = "2", optional = true }
 
 rustls           = { version = "0.23", features = ["tls12"], optional = true }
 rustls-pemfile   = { version = "2", optional = true }
+rsa              = { version = "0.9", features = ["sha1", "pem"], optional = true }
+sha1             = { version = "0.10", optional = true }
 
 smoltcp          = { version = "0.11", default-features = false, features = ["socket-tcp", "proto-ipv6", "medium-ip", "alloc"], optional = true }
 x25519-dalek     = { version = "2", features = ["static_secrets"], optional = true }

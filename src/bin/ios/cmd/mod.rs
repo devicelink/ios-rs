@@ -6,6 +6,7 @@ pub mod diagnostics;
 pub mod location;
 pub mod notification;
 pub mod oslog;
+pub mod pair;
 pub mod ps;
 pub mod screenshot;
 pub mod syslog;
