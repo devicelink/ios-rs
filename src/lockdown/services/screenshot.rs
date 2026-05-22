@@ -24,6 +24,10 @@ impl ScreenshotClient {
         Ok(ScreenshotClient { stream })
     }
 
+    pub fn from_stream(stream: MuxSocket) -> Self {
+        ScreenshotClient { stream }
+    }
+
     /// Capture a screenshot and return the raw PNG bytes.
     pub fn take(&mut self) -> Result<Vec<u8>, Error> {
         // 1. Receive version exchange from device

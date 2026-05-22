@@ -138,6 +138,21 @@ pub fn encode_ack(msg: &DtxMessage) -> Vec<u8> {
     buf
 }
 
+fn encode_ack_raw(msg_id: u32, conv_id: u32, channel: i32) -> Vec<u8> {
+    let mut buf = vec![0u8; 48];
+    buf[0..4].copy_from_slice(&MAGIC);
+    buf[4..8].copy_from_slice(&32u32.to_le_bytes());
+    buf[8..10].copy_from_slice(&0u16.to_le_bytes());
+    buf[10..12].copy_from_slice(&1u16.to_le_bytes());
+    buf[12..16].copy_from_slice(&16u32.to_le_bytes());
+    buf[16..20].copy_from_slice(&msg_id.to_le_bytes());
+    buf[20..24].copy_from_slice(&conv_id.to_le_bytes());
+    buf[24..28].copy_from_slice(&(channel as u32).to_le_bytes());
+    buf[28..32].copy_from_slice(&0u32.to_le_bytes());
+    buf[32..36].copy_from_slice(&(MsgType::Ack as u32).to_le_bytes());
+    buf
+}
+
 /// Encode a reply with a plist payload.
 pub fn encode_reply(req: &DtxMessage, payload_bytes: &[u8]) -> Vec<u8> {
     encode_raw(req.msg_id, req.conv_id + 1, req.channel, false, MsgType::Reply, &[], payload_bytes)
@@ -306,6 +321,14 @@ fn read_exact<R: Read>(r: &mut R, buf: &mut [u8]) -> std::io::Result<()> {
 }
 
 pub fn read_message<R: Read>(r: &mut R) -> Result<DtxMessage, Error> {
+    read_message_inner(r, None)
+}
+
+fn read_message_inner<R: Read>(
+    r: &mut R,
+    // Only held briefly for each ACK, NOT across blocking reads.
+    writer: Option<Arc<Mutex<BufWriter<Box<dyn Write + Send>>>>>,
+) -> Result<DtxMessage, Error> {
     let mut hdr = [0u8; 32];
     read_exact(r, &mut hdr)?;
 
@@ -313,6 +336,7 @@ pub fn read_message<R: Read>(r: &mut R) -> Result<DtxMessage, Error> {
     let magic = u32::from_be_bytes(hdr[0..4].try_into().unwrap());
     if magic != 0x795B3D1F { return Err(Error::BadMagic(magic)); }
 
+    let fragment_index = u16::from_le_bytes(hdr[8..10].try_into().unwrap());
     let fragment_count = u16::from_le_bytes(hdr[10..12].try_into().unwrap());
     let msg_len        = u32::from_le_bytes(hdr[12..16].try_into().unwrap()) as usize;
     let msg_id         = u32::from_le_bytes(hdr[16..20].try_into().unwrap());
@@ -321,28 +345,44 @@ pub fn read_message<R: Read>(r: &mut R) -> Result<DtxMessage, Error> {
     let expects        = u32::from_le_bytes(hdr[28..32].try_into().unwrap()) != 0;
 
     if msg_len == 0 {
-        // Drain any remaining empty fragments
-        for _ in 1..fragment_count {
-            let mut fhdr = [0u8; 32];
-            read_exact(r, &mut fhdr)?;
-        }
         return Ok(DtxMessage { msg_id, conv_id, channel, expects_reply: expects, msg_type: 0, aux: vec![], payload: None });
     }
 
-    let mut payload = vec![0u8; msg_len];
-    read_exact(r, &mut payload)?;
-
-    // Assemble remaining fragments (each has a 32-byte header + continuation bytes)
-    for _ in 1..fragment_count {
-        let mut fhdr = [0u8; 32];
-        read_exact(r, &mut fhdr)?;
-        let flen = u32::from_le_bytes(fhdr[12..16].try_into().unwrap()) as usize;
-        if flen > 0 {
-            let mut fbuf = vec![0u8; flen];
-            read_exact(r, &mut fbuf)?;
-            payload.extend_from_slice(&fbuf);
+    // DTX fragmentation protocol (go-ios fragmentdecoder.go):
+    // DTX fragmentation protocol (go-ios fragmentdecoder.go):
+    //   Fragment 0: header-only (no payload bytes) — msg_len is the TOTAL across all fragments.
+    //   Fragment 1..N-1: 32-byte sub-header + sub-header[12..16] bytes of payload data.
+    let payload = if fragment_index == 0 && fragment_count > 1 {
+        let mut data = Vec::with_capacity(msg_len);
+        for _fi in 1..fragment_count {
+            let mut fhdr = [0u8; 32];
+            read_exact(r, &mut fhdr)?;
+            let flen     = u32::from_le_bytes(fhdr[12..16].try_into().unwrap()) as usize;
+            let fid      = u32::from_le_bytes(fhdr[16..20].try_into().unwrap());
+            let fconv    = u32::from_le_bytes(fhdr[20..24].try_into().unwrap());
+            let fchannel = i32::from_le_bytes(fhdr[24..28].try_into().unwrap());
+            let fexp     = u32::from_le_bytes(fhdr[28..32].try_into().unwrap()) != 0;
+            if fexp {
+                if let Some(ref w) = writer {
+                    let ack = encode_ack_raw(fid, fconv + 1, fchannel);
+                    if let Ok(mut lock) = w.lock() {
+                        let _ = lock.write_all(&ack);
+                        let _ = lock.flush();
+                    }
+                }
+            }
+            if flen > 0 {
+                let old = data.len();
+                data.resize(old + flen, 0);
+                read_exact(r, &mut data[old..])?;
+            }
         }
-    }
+        data
+    } else {
+        let mut payload = vec![0u8; msg_len];
+        read_exact(r, &mut payload)?;
+        payload
+    };
 
     let msg_type  = u32::from_le_bytes(payload[0..4].try_into().unwrap());
     let aux_len   = u32::from_le_bytes(payload[4..8].try_into().unwrap()) as usize;
@@ -447,7 +487,7 @@ impl DtxConn {
             .spawn(move || reader_loop(reader, w2, wt, dt))
             .expect("dtx reader thread");
 
-        DtxConn { writer: w, next_id: Arc::new(Mutex::new(1)), next_chan: Arc::new(Mutex::new(1)), waiters, dispatchers, _reader: handle, timeout: Duration::from_secs(10) }
+        DtxConn { writer: w, next_id: Arc::new(Mutex::new(5)), next_chan: Arc::new(Mutex::new(1)), waiters, dispatchers, _reader: handle, timeout: Duration::from_secs(10) }
     }
 
     /// Send a method call and wait for the reply. Returns the reply's payload.
@@ -574,7 +614,7 @@ fn reader_loop<R: Read>(
     dispatchers:    DispatchMap,
 ) {
     loop {
-        let msg = match read_message(&mut reader) {
+        let msg = match read_message_inner(&mut reader, Some(Arc::clone(&writer))) {
             Ok(m)  => m,
             Err(_) => return,
         };
