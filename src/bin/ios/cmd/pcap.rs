@@ -50,18 +50,9 @@ pub fn run(udid: Option<&str>, mode: ConnectionMode, output: Option<&str>) -> Re
             .with_context(|| format!("create {p}"))?),
     };
 
-    // Send activation plist to start the capture stream.
-    {
-        let mut start = plist::Dictionary::new();
-        start.insert("StartCapture".into(), Value::Integer(1.into()));
-        start.insert("Interface".into(), Value::String("any".into()));
-        let mut body = Vec::new();
-        plist::to_writer_xml(&mut body, &Value::Dictionary(start))?;
-        let len = body.len() as u32;
-        stream.write_all(&len.to_be_bytes()).context("send StartCapture")?;
-        stream.write_all(&body).context("send StartCapture body")?;
-        stream.flush()?;
-    }
+    // pcapd streams packets immediately after RSDCheckin with no activation needed.
+    // Note: on iOS 17.4+ this requires the personalized DDI to be mounted; without it
+    // the service connects but sends no data.
 
     // Global pcap header (little-endian, Ethernet link type)
     out.write_all(&pcap_global_header())?;
