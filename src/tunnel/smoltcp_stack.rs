@@ -134,7 +134,7 @@ fn poll_loop(
 
     let mut sockets   = SocketSet::new(vec![]);
     let mut pending:  Vec<(SocketHandle, mpsc::SyncSender<Result<UnixStream, String>>)> = Vec::new();
-    let mut active:   Vec<(SocketHandle, UnixStream)> = Vec::new();
+    let mut active:   Vec<(SocketHandle, UnixStream, Vec<u8>)> = Vec::new();
     let mut next_port: u16 = 49152;
 
     loop {
@@ -144,8 +144,8 @@ fn poll_loop(
             let port = next_port;
             next_port = next_port.wrapping_add(1).max(49152);
             let mut sock = tcp::Socket::new(
-                tcp::SocketBuffer::new(vec![0u8; 65536]),
-                tcp::SocketBuffer::new(vec![0u8; 65536]),
+                tcp::SocketBuffer::new(vec![0u8; 524288]),
+                tcp::SocketBuffer::new(vec![0u8; 524288]),
             );
             let remote = (Ipv6Address::from_bytes(&req.addr.octets()), req.port);
             match sock.connect(iface.context(), remote, port) {
@@ -181,7 +181,7 @@ fn unified_loop<S: Read + Write>(
 
     let mut sockets   = SocketSet::new(vec![]);
     let mut pending:  Vec<(SocketHandle, mpsc::SyncSender<Result<UnixStream, String>>)> = Vec::new();
-    let mut active:   Vec<(SocketHandle, UnixStream)> = Vec::new();
+    let mut active:   Vec<(SocketHandle, UnixStream, Vec<u8>)> = Vec::new();
     let mut next_port: u16 = 49152;
 
     loop {
@@ -197,8 +197,8 @@ fn unified_loop<S: Read + Write>(
             let port = next_port;
             next_port = next_port.wrapping_add(1).max(49152);
             let mut sock = tcp::Socket::new(
-                tcp::SocketBuffer::new(vec![0u8; 65536]),
-                tcp::SocketBuffer::new(vec![0u8; 65536]),
+                tcp::SocketBuffer::new(vec![0u8; 524288]),
+                tcp::SocketBuffer::new(vec![0u8; 524288]),
             );
             let remote = (Ipv6Address::from_bytes(&req.addr.octets()), req.port);
             match sock.connect(iface.context(), remote, port) {
@@ -223,7 +223,7 @@ fn unified_loop<S: Read + Write>(
 fn promote_and_bridge(
     sockets: &mut SocketSet<'_>,
     pending: &mut Vec<(SocketHandle, mpsc::SyncSender<Result<UnixStream, String>>)>,
-    active:  &mut Vec<(SocketHandle, UnixStream)>,
+    active:  &mut Vec<(SocketHandle, UnixStream, Vec<u8>)>,
 ) {
     pending.retain(|(handle, result_tx)| {
         let sock = sockets.get_mut::<tcp::Socket>(*handle);
@@ -232,7 +232,7 @@ fn promote_and_bridge(
                 match UnixStream::pair() {
                     Ok((local, proxy)) => {
                         proxy.set_nonblocking(true).ok();
-                        active.push((*handle, proxy));
+                        active.push((*handle, proxy, Vec::new()));
                         let _ = result_tx.send(Ok(local));
                     }
                     Err(e) => { let _ = result_tx.send(Err(e.to_string())); }
@@ -249,16 +249,38 @@ fn promote_and_bridge(
 
     let mut i = 0;
     while i < active.len() {
-        let (handle, proxy) = &mut active[i];
+        let (handle, proxy, write_buf) = &mut active[i];
         let sock = sockets.get_mut::<tcp::Socket>(*handle);
 
+        // Flush any previously buffered data before reading more from smoltcp.
+        if !write_buf.is_empty() {
+            match proxy.write_all(write_buf) {
+                Ok(()) => write_buf.clear(),
+                Err(_) => {
+                    // Pipe still full — skip smoltcp read; try again next poll.
+                    i += 1;
+                    continue;
+                }
+            }
+        }
+
+        // Forward data from smoltcp socket → UnixStream pipe.
+        // If the pipe is full, buffer the unwritten bytes so smoltcp data is not lost.
         while sock.can_recv() {
             let mut buf = [0u8; 8192];
             match sock.recv_slice(&mut buf) {
                 Ok(0) | Err(_) => break,
-                Ok(n) => { let _ = proxy.write_all(&buf[..n]); }
+                Ok(n) => {
+                    if let Err(_) = proxy.write_all(&buf[..n]) {
+                        // Pipe full: save for next poll iteration.
+                        write_buf.extend_from_slice(&buf[..n]);
+                        break;
+                    }
+                }
             }
         }
+
+        // Forward data from UnixStream pipe → smoltcp socket (outgoing).
         while sock.can_send() {
             let mut buf = [0u8; 8192];
             match proxy.read(&mut buf) {

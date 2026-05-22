@@ -13,7 +13,7 @@ pub fn run(udid: Option<&str>, mode: ConnectionMode, output: &str) -> Result<()>
     let mut session = open_session(udid, mode)?;
 
     let png = if session.is_rsd() {
-        take_modern(&mut session).context("screenshot via dtservicehub")?
+        take_modern(&mut session)?
     } else {
         let mut client = ScreenshotClient::connect(session.lockdown())
             .context("connect screenshotr (legacy, iOS < 17)")?;
@@ -34,41 +34,27 @@ pub fn run(udid: Option<&str>, mode: ConnectionMode, output: &str) -> Result<()>
 
 fn take_modern(session: &mut DeviceSession) -> Result<Vec<u8>> {
     let conn = connect_hub(session)?;
-    conn.handshake().map_err(|e| anyhow::anyhow!("dtservicehub handshake: {e}"))?;
-
-    // Open deviceinfo first — required prerequisite on some iOS versions (mirrors perf.rs).
-    if let Ok(di) = conn.request_channel("com.apple.instruments.server.services.deviceinfo") {
-        let _ = conn.call_async(di, "sysmonProcessAttributes", &[]);
-        let _ = conn.call_async(di, "sysmonSystemAttributes", &[]);
-    }
+    conn.handshake().map_err(|e| anyhow::anyhow!("handshake: {e}"))?;
 
     let ch = conn
         .request_channel("com.apple.instruments.server.services.screenshot")
         .map_err(|e| anyhow::anyhow!("screenshot channel: {e}"))?;
 
-    // takeScreenshot returns a direct reply; the PNG is in the first aux entry.
     let reply = conn
         .call_full(ch, "takeScreenshot", &[])
-        .map_err(|e| anyhow::anyhow!("takeScreenshot: {e} — note: requires Developer Mode on iOS 17+"))?;
+        .map_err(|e| anyhow::anyhow!("takeScreenshot: {e}"))?;
 
-    // PNG arrives as raw bytes in aux[0] (go-ios: msg.Payload[0])
     for aux in &reply.aux {
         if let AuxValue::Bytes(bytes) = aux {
-            if let Some(png) = extract_png_bytes(bytes) {
-                return Ok(png);
-            }
+            if let Some(png) = extract_png_bytes(bytes) { return Ok(png); }
         }
     }
-    // Fallback: check the plist body too
     if let Some(v) = &reply.payload {
-        if let Some(png) = extract_png_value(v) {
-            return Ok(png);
-        }
+        if let Some(png) = extract_png_value(v) { return Ok(png); }
     }
     Err(anyhow::anyhow!(
-        "takeScreenshot: no PNG found in reply (aux={} payload={:?})",
-        reply.aux.len(),
-        reply.payload,
+        "takeScreenshot: no PNG in reply (aux={} payload={:?})",
+        reply.aux.len(), reply.payload,
     ))
 }
 
@@ -78,9 +64,7 @@ fn connect_hub(session: &mut DeviceSession) -> Result<Arc<DtxConn>> {
         .map_err(|e| anyhow::anyhow!("RSD: {e}"))?;
     let port = rsd
         .service("com.apple.instruments.dtservicehub")
-        .ok_or_else(|| {
-            anyhow::anyhow!("dtservicehub not in RSD catalog — is Developer Mode enabled?")
-        })?
+        .ok_or_else(|| anyhow::anyhow!("dtservicehub not in RSD catalog"))?
         .port;
 
     let tunnel = session
@@ -95,19 +79,16 @@ fn connect_hub(session: &mut DeviceSession) -> Result<Arc<DtxConn>> {
     Ok(Arc::new(DtxConn::new(stream_r, stream)))
 }
 
-/// Try to extract PNG from raw bytes: direct PNG, or NSKeyedArchiver-wrapped NSData.
 fn extract_png_bytes(bytes: &[u8]) -> Option<Vec<u8>> {
     if bytes.starts_with(b"\x89PNG") {
         return Some(bytes.to_vec());
     }
-    // May be NSKeyedArchiver binary plist containing NSData
     if let Ok(v) = plist::from_bytes::<Value>(bytes) {
         return extract_png_value(&v);
     }
     None
 }
 
-/// Extract PNG from a plist Value (direct Data or NSKeyedArchiver dict).
 fn extract_png_value(v: &Value) -> Option<Vec<u8>> {
     match v {
         Value::Data(bytes) => extract_png_bytes(bytes),
