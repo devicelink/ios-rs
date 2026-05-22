@@ -456,6 +456,21 @@ enum AppsAction {
         #[arg(long)]
         udid: Option<String>,
     },
+    /// Launch an app by bundle ID (iOS 17.4+)
+    Launch {
+        bundle_id: String,
+        /// Kill any existing instance before launching
+        #[arg(long)]
+        terminate_existing: bool,
+        #[arg(long)]
+        udid: Option<String>,
+    },
+    /// Kill a process by PID (sends SIGKILL, iOS 17.4+)
+    Kill {
+        pid: i64,
+        #[arg(long)]
+        udid: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -602,6 +617,18 @@ fn main() -> Result<()> {
                 cmd::apps::install::run(udid.as_deref(), &ipa, mode),
             AppsAction::Uninstall { bundle_id, udid } =>
                 cmd::apps::uninstall::run(udid.as_deref(), &bundle_id, mode),
+            AppsAction::Launch { bundle_id, terminate_existing, udid } => {
+                let mut session = cmd::open_session(udid.as_deref(), mode)?;
+                let pid = cmd::apps::launch::run(&mut session, &bundle_id, terminate_existing)?;
+                println!("launched {bundle_id} → pid {pid}");
+                Ok(())
+            }
+            AppsAction::Kill { pid, udid } => {
+                let mut session = cmd::open_session(udid.as_deref(), mode)?;
+                cmd::apps::kill::run(&mut session, pid)?;
+                println!("sent SIGKILL to pid {pid}");
+                Ok(())
+            }
         },
     }
 }

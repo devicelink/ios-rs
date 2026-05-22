@@ -172,7 +172,19 @@ fn decode_value(buf: &[u8], pos: usize) -> Result<(Value, usize), XpcError> {
             Ok((Value::Dictionary(map), end))
         }
 
-        other => Err(XpcError::UnknownType(other)),
+        // 0x7000 = XPC_TYPE_DATE — 8-byte double (seconds since reference epoch).
+        // Decode as a Double so dict traversal can continue past it.
+        0x0000_7000 => {
+            let bits = read_u64le(buf, p)?;
+            Ok((Value::Double(f64::from_bits(bits)), p + 8))
+        }
+
+        // Unknown fixed-size scalar — skip 8 bytes and return Null so callers
+        // can still traverse the surrounding dict/array.
+        other => {
+            let _ = other;
+            Ok((Value::Null, p + 8))
+        }
     }
 }
 
