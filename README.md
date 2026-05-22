@@ -86,6 +86,10 @@ Commands:
   syslog        Stream live syslog output from the device (Ctrl-C to stop)
   crash         Crash report management
   notification  Darwin notification proxy
+  ps            List running processes (requires Developer Mode)
+  location      Simulate or clear device GPS location (requires Developer Mode)
+  oslog         Stream structured os_log output (Ctrl-C to stop)
+  deviceip      Show device IP / network addresses
   devicename    Get or set the device name
   version       Show iOS version and available connection paths
   afc           Browse and transfer files on the device media partition (DCIM, Books, …)
