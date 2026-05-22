@@ -63,6 +63,15 @@ impl Connection {
         }
     }
 
+    pub fn delete_pair_record(&mut self, udid: &str) -> Result<(), Error> {
+        let _tag = self.codec.delete_pair_record(udid);
+        self.flush()?;
+        match self.next_event()? {
+            Event::RequestFailed { .. } => Err(Error::RequestFailed(ResultCode::BadDevice)),
+            _ => Ok(()),
+        }
+    }
+
     pub fn save_pair_record(&mut self, udid: &str, record: Vec<u8>) -> Result<(), Error> {
         let _tag = self.codec.save_pair_record(udid, record);
         self.flush()?;

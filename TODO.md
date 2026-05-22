@@ -4,8 +4,9 @@ Comparison against [pymobiledevice3](https://github.com/doronz88/pymobiledevice3
 
 ## Pairing & Device Management
 
-- [ ] Pair device (`lockdown pair` / `lockdown unpair`)
-- [ ] Save / read pair record to disk
+- [x] Pair device (`ios pair`) — generates RSA-2048 root/host/device certs, sends lockdownd Pair request, saves to usbmuxd
+- [x] Unpair device (`ios unpair`) — sends lockdownd Unpair, deletes record from usbmuxd
+- [ ] Save / read pair record to disk (usbmuxd stores it; disk export not implemented)
 - [ ] Enable developer mode (`amfi enable-developer-mode`, query status)
 - [x] Reboot device (`ios reboot`)
 - [x] Shut down device (`ios shutdown`)

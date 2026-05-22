@@ -80,6 +80,20 @@ impl Codec {
         tag
     }
 
+    pub fn delete_pair_record(&mut self, udid: &str) -> u32 {
+        let tag = self.alloc_tag();
+        let req = PairRecordRequest {
+            message_type:          "DeletePairRecord".into(),
+            client_version_string: "devicelink-0.1.0".into(),
+            prog_name:             "devicelink".into(),
+            lib_usbmux_version:    3,
+            pair_record_id:        udid.to_string(),
+        };
+        let body = plist_msg::encode(&req).unwrap();
+        self.enqueue_frame(&body, tag);
+        tag
+    }
+
     pub fn connect(&mut self, device_id: u32, port: u16) -> u32 {
         let tag = self.alloc_tag();
         self.pending_connects.push_back(tag);

@@ -144,6 +144,18 @@ enum Cmd {
         udid: Option<String>,
     },
 
+    /// Pair with the device (accept Trust dialog on device first)
+    Pair {
+        #[arg(long)]
+        udid: Option<String>,
+    },
+
+    /// Remove the pairing record for this device
+    Unpair {
+        #[arg(long)]
+        udid: Option<String>,
+    },
+
     /// Get or set the device name
     Devicename {
         /// New device name to set (omit to print current name)
@@ -536,6 +548,8 @@ fn main() -> Result<()> {
         Cmd::Oslog { process, level, json, udid } =>
             cmd::oslog::run(udid.as_deref(), process.as_deref(), level.as_deref(), json),
         Cmd::Deviceip { udid } => cmd::deviceip::run(udid.as_deref()),
+        Cmd::Pair   { udid } => cmd::pair::pair(udid.as_deref()),
+        Cmd::Unpair { udid } => cmd::pair::unpair(udid.as_deref()),
         Cmd::Devicename { name, udid } => {
             let mut session = cmd::open_session(udid.as_deref(), mode)?;
             match name {
