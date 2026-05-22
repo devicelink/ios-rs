@@ -51,8 +51,8 @@ Comparison against [pymobiledevice3](https://github.com/doronz88/pymobiledevice3
 ## Process Management
 
 - [x] List running processes (`ios ps`) — via dtservicehub deviceinfo `runningProcesses`
-- [ ] Launch installed app by bundle ID (with args / env vars)
-- [ ] Kill app / process by bundle ID or PID
+- [x] Launch installed app by bundle ID (`ios apps launch <bundle-id>`) — via coredevice.appservice RemoteXPC
+- [x] Kill process by PID (`ios apps kill <pid>`) — sends SIGKILL via coredevice.appservice
 - [ ] Waive memory limit for a process (`memlimitoff`)
 
 ## Crash Reports

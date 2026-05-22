@@ -170,6 +170,8 @@ Commands:
   list       List installed apps
   install    Install an IPA file
   uninstall  Uninstall an app by bundle ID
+  launch     Launch an app by bundle ID (iOS 17.4+)
+  kill       Kill a process by PID (sends SIGKILL, iOS 17.4+)
   help       Print this message or the help of the given subcommand(s)
 ```
 
