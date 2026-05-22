@@ -111,6 +111,39 @@ enum Cmd {
         action: NotificationAction,
     },
 
+    /// List running processes (requires Developer Mode)
+    Ps {
+        #[arg(long)]
+        udid: Option<String>,
+    },
+
+    /// Simulate or clear device GPS location (requires Developer Mode)
+    Location {
+        #[command(subcommand)]
+        action: LocationAction,
+    },
+
+    /// Stream structured os_log output (Ctrl-C to stop)
+    Oslog {
+        /// Filter by process name
+        #[arg(long)]
+        process: Option<String>,
+        /// Minimum level: default, info, debug, error, fault [default: default]
+        #[arg(long)]
+        level: Option<String>,
+        /// Output newline-delimited JSON
+        #[arg(long)]
+        json: bool,
+        #[arg(long)]
+        udid: Option<String>,
+    },
+
+    /// Show device IP / network addresses
+    Deviceip {
+        #[arg(long)]
+        udid: Option<String>,
+    },
+
     /// Get or set the device name
     Devicename {
         /// New device name to set (omit to print current name)
@@ -246,6 +279,22 @@ enum CrashAction {
     /// Delete a crash report from the device
     Rm {
         name: String,
+        #[arg(long)]
+        udid: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum LocationAction {
+    /// Set a simulated GPS location
+    Set {
+        lat: f64,
+        lon: f64,
+        #[arg(long)]
+        udid: Option<String>,
+    },
+    /// Clear simulated location and restore real GPS
+    Clear {
         #[arg(long)]
         udid: Option<String>,
     },
@@ -464,6 +513,14 @@ fn main() -> Result<()> {
             NotificationAction::Post    { name, udid }        => cmd::notification::post(udid.as_deref(), mode, &name),
             NotificationAction::Observe { name, udid }        => cmd::notification::observe(udid.as_deref(), mode, name.as_deref()),
         },
+        Cmd::Ps { udid }   => cmd::ps::run(udid.as_deref()),
+        Cmd::Location { action } => match action {
+            LocationAction::Set   { lat, lon, udid } => cmd::location::set(udid.as_deref(), lat, lon),
+            LocationAction::Clear { udid }           => cmd::location::clear(udid.as_deref()),
+        },
+        Cmd::Oslog { process, level, json, udid } =>
+            cmd::oslog::run(udid.as_deref(), process.as_deref(), level.as_deref(), json),
+        Cmd::Deviceip { udid } => cmd::deviceip::run(udid.as_deref()),
         Cmd::Devicename { name, udid } => {
             let mut session = cmd::open_session(udid.as_deref(), mode)?;
             match name {

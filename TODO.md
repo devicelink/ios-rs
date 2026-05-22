@@ -32,7 +32,7 @@ Comparison against [pymobiledevice3](https://github.com/doronz88/pymobiledevice3
 ## Syslog & Logging
 
 - [x] Stream live syslog (`ios syslog` — auto-routes to RSD shim on iOS 17.4+)
-- [ ] Stream oslog via DVT instruments protocol
+- [x] Stream oslog (`ios oslog`) — via `com.apple.os_trace_relay.shim.remote`; structured binary entries with pid/level/subsystem/category/message
 - [x] Collect / dump syslog to file (`ios syslog --output <file>`)
 
 ## Screenshot & Screen Recording
@@ -44,13 +44,13 @@ Comparison against [pymobiledevice3](https://github.com/doronz88/pymobiledevice3
 
 ## Location Spoofing
 
-- [ ] Set simulated GPS location (lat / lon)
-- [ ] Clear simulated location (restore real GPS)
+- [x] Set simulated GPS location (`ios location set <lat> <lon>`) — dtservicehub LocationSimulation
+- [x] Clear simulated location (`ios location clear`) — restores real GPS
 - [ ] Play GPX route file for animated movement
 
 ## Process Management
 
-- [ ] List running processes (`ps`)
+- [x] List running processes (`ios ps`) — via dtservicehub deviceinfo `runningProcesses`
 - [ ] Launch installed app by bundle ID (with args / env vars)
 - [ ] Kill app / process by bundle ID or PID
 - [ ] Waive memory limit for a process (`memlimitoff`)
