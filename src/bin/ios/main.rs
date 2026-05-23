@@ -4,6 +4,8 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use ios_rs::tunnel::ConnectionMode;
 
+use crate::cmd::output::OutputMode;
+
 // ureq uses rustls 0.23 which requires an explicit crypto provider.
 // Install ring before any TLS connections are made.
 #[cfg(feature = "cli")]
@@ -18,6 +20,10 @@ struct Cli {
     /// Also honoured via the IOS_LEGACY=1 environment variable.
     #[arg(long, global = true)]
     legacy: bool,
+
+    /// Output format: text (human-readable) or json. auto selects based on TTY detection.
+    #[arg(short = 'o', long = "output", default_value = "auto", global = true)]
+    output: OutputMode,
 
     #[command(subcommand)]
     command: Cmd,
@@ -88,12 +94,9 @@ enum Cmd {
         /// Filter entries to those whose text contains this string (case-insensitive)
         #[arg(long)]
         filter: Option<String>,
-        /// Output newline-delimited JSON instead of raw log lines
-        #[arg(long)]
-        json: bool,
         /// Save output to a file instead of stdout
-        #[arg(short, long)]
-        output: Option<String>,
+        #[arg(short = 'f', long = "output-file")]
+        output_file: Option<String>,
         #[arg(long)]
         udid: Option<String>,
     },
@@ -131,9 +134,6 @@ enum Cmd {
         /// Minimum level: default, info, debug, error, fault [default: default]
         #[arg(long)]
         level: Option<String>,
-        /// Output newline-delimited JSON
-        #[arg(long)]
-        json: bool,
         #[arg(long)]
         udid: Option<String>,
     },
@@ -292,6 +292,12 @@ enum Cmd {
         udid: Option<String>,
     },
 
+    /// Manage the persistent RSD tunnel daemon
+    Tunnel {
+        #[command(subcommand)]
+        action: TunnelAction,
+    },
+
     /// Mount the personalized Developer Disk Image (unlocks Instruments / dtservicehub)
     Mounter {
         #[command(subcommand)]
@@ -300,9 +306,6 @@ enum Cmd {
 
     /// Live performance monitoring (CPU, RAM per process) via Instruments sysmontap
     Perf {
-        /// Output newline-delimited JSON instead of the live htop view
-        #[arg(long)]
-        json: bool,
         /// Sampling interval in milliseconds (default: 1000)
         #[arg(long, default_value = "1000")]
         interval: u64,
@@ -342,6 +345,18 @@ enum Cmd {
         #[arg(long)]
         udid: Option<String>,
     },
+}
+
+#[derive(Subcommand)]
+enum TunnelAction {
+    /// Ensure the tunnel daemon is running (spawns it in the background if not)
+    Start,
+    /// Stop the running tunnel daemon
+    Stop,
+    /// List active device tunnels managed by the daemon
+    List,
+    /// Run as the tunnel daemon process (normally auto-spawned; call directly for debugging)
+    Daemon,
 }
 
 #[derive(Subcommand)]
@@ -647,70 +662,71 @@ enum OrientationAction {
 
 fn main() -> Result<()> {
     install_crypto_provider();
-    let cli  = Cli::parse();
-    let mode = ConnectionMode::from_env().with_legacy_flag(cli.legacy);
+    let cli    = Cli::parse();
+    let mode   = ConnectionMode::from_env().with_legacy_flag(cli.legacy);
+    let output = cli.output;
 
     match cli.command {
-        Cmd::Devices          => cmd::devices::run(),
-        Cmd::Info   { udid }  => cmd::info::run(udid.as_deref(), mode),
-        Cmd::Services { udid} => cmd::services::run(udid.as_deref(), mode),
+        Cmd::Devices          => cmd::devices::run(output),
+        Cmd::Info   { udid }  => cmd::info::run(udid.as_deref(), mode, output),
+        Cmd::Services { udid} => cmd::services::run(udid.as_deref(), mode, output),
         Cmd::Relay { port, listen, udid } => cmd::relay::run(udid.as_deref(), port, listen),
-        Cmd::Watch            => cmd::watch::run(),
-        Cmd::Screenshot { output, udid } =>
-            cmd::screenshot::run(udid.as_deref(), mode, &output),
-        Cmd::Reboot   { udid } => cmd::diagnostics::reboot(udid.as_deref(), mode),
-        Cmd::Shutdown { udid } => cmd::diagnostics::shutdown(udid.as_deref(), mode),
+        Cmd::Watch            => cmd::watch::run(output),
+        Cmd::Screenshot { output: output_path, udid } =>
+            cmd::screenshot::run(udid.as_deref(), mode, &output_path, output),
+        Cmd::Reboot   { udid } => cmd::diagnostics::reboot(udid.as_deref(), mode, output),
+        Cmd::Shutdown { udid } => cmd::diagnostics::shutdown(udid.as_deref(), mode, output),
         Cmd::Diagnostics { action } => match action {
-            DiagnosticsAction::Battery { udid } => cmd::diagnostics::battery(udid.as_deref(), mode),
-            DiagnosticsAction::All     { udid } => cmd::diagnostics::all(udid.as_deref(), mode),
+            DiagnosticsAction::Battery { udid } => cmd::diagnostics::battery(udid.as_deref(), mode, output),
+            DiagnosticsAction::All     { udid } => cmd::diagnostics::all(udid.as_deref(), mode, output),
         },
-        Cmd::Syslog { process, filter, json, output, udid } =>
-            cmd::syslog::run(udid.as_deref(), mode, process.as_deref(), filter.as_deref(), json, output.as_deref()),
+        Cmd::Syslog { process, filter, output_file, udid } =>
+            cmd::syslog::run(udid.as_deref(), mode, process.as_deref(), filter.as_deref(), output, output_file.as_deref()),
         Cmd::Crash { action } => match action {
-            CrashAction::Ls   { long, udid }       => cmd::crash::ls(udid.as_deref(), mode, long),
-            CrashAction::Pull { name, local, udid } => cmd::crash::pull(udid.as_deref(), mode, &name, local.as_deref()),
-            CrashAction::Rm   { name, udid }        => cmd::crash::rm(udid.as_deref(), mode, &name),
+            CrashAction::Ls   { long, udid }       => cmd::crash::ls(udid.as_deref(), mode, long, output),
+            CrashAction::Pull { name, local, udid } => cmd::crash::pull(udid.as_deref(), mode, &name, local.as_deref(), output),
+            CrashAction::Rm   { name, udid }        => cmd::crash::rm(udid.as_deref(), mode, &name, output),
         },
         Cmd::Notification { action } => match action {
-            NotificationAction::Post    { name, udid }        => cmd::notification::post(udid.as_deref(), mode, &name),
-            NotificationAction::Observe { name, udid }        => cmd::notification::observe(udid.as_deref(), mode, name.as_deref()),
+            NotificationAction::Post    { name, udid }        => cmd::notification::post(udid.as_deref(), mode, &name, output),
+            NotificationAction::Observe { name, udid }        => cmd::notification::observe(udid.as_deref(), mode, name.as_deref(), output),
         },
-        Cmd::Ps { udid }   => cmd::ps::run(udid.as_deref()),
+        Cmd::Ps { udid }   => cmd::ps::run(udid.as_deref(), output),
         Cmd::Location { action } => match action {
-            LocationAction::Set   { lat, lon, udid } => cmd::location::set(udid.as_deref(), lat, lon),
-            LocationAction::Clear { udid }           => cmd::location::clear(udid.as_deref()),
+            LocationAction::Set   { lat, lon, udid } => cmd::location::set(udid.as_deref(), lat, lon, output),
+            LocationAction::Clear { udid }           => cmd::location::clear(udid.as_deref(), output),
         },
-        Cmd::Oslog { process, level, json, udid } =>
-            cmd::oslog::run(udid.as_deref(), process.as_deref(), level.as_deref(), json),
-        Cmd::Deviceip { udid } => cmd::deviceip::run(udid.as_deref()),
+        Cmd::Oslog { process, level, udid } =>
+            cmd::oslog::run(udid.as_deref(), process.as_deref(), level.as_deref(), output),
+        Cmd::Deviceip { udid } => cmd::deviceip::run(udid.as_deref(), output),
         Cmd::Pair { udid, supervision_cert, supervision_key } =>
-            cmd::pair::pair(udid.as_deref(), supervision_cert.as_deref(), supervision_key.as_deref()),
-        Cmd::Unpair { udid } => cmd::pair::unpair(udid.as_deref()),
+            cmd::pair::pair(udid.as_deref(), supervision_cert.as_deref(), supervision_key.as_deref(), output),
+        Cmd::Unpair { udid } => cmd::pair::unpair(udid.as_deref(), output),
         Cmd::PairExport { path, udid } =>
-            cmd::pair::export(udid.as_deref(), path.as_deref()),
+            cmd::pair::export(udid.as_deref(), path.as_deref(), output),
         Cmd::PairImport { path, udid } =>
-            cmd::pair::import(udid.as_deref(), &path),
+            cmd::pair::import(udid.as_deref(), &path, output),
         Cmd::Devmode { action } => match action {
-            DevmodeAction::Status { udid } => cmd::devmode::status(udid.as_deref(), mode),
-            DevmodeAction::Enable { udid } => cmd::devmode::enable(udid.as_deref(), mode),
+            DevmodeAction::Status { udid } => cmd::devmode::status(udid.as_deref(), mode, output),
+            DevmodeAction::Enable { udid } => cmd::devmode::enable(udid.as_deref(), mode, output),
         },
-        Cmd::Erase { yes, udid } => cmd::erase::run(udid.as_deref(), mode, yes),
+        Cmd::Erase { yes, udid } => cmd::erase::run(udid.as_deref(), mode, yes, output),
         Cmd::Wifi { action } => match action {
-            WifiAction::Status { udid } => cmd::wifi::status(udid.as_deref(), mode),
-            WifiAction::On     { udid } => cmd::wifi::set(udid.as_deref(), mode, true),
-            WifiAction::Off    { udid } => cmd::wifi::set(udid.as_deref(), mode, false),
+            WifiAction::Status { udid } => cmd::wifi::status(udid.as_deref(), mode, output),
+            WifiAction::On     { udid } => cmd::wifi::set(udid.as_deref(), mode, true, output),
+            WifiAction::Off    { udid } => cmd::wifi::set(udid.as_deref(), mode, false, output),
         },
         Cmd::Mobilegestalt { key, udid } =>
-            cmd::mobilegestalt::query(udid.as_deref(), mode, &key),
-        Cmd::Activate   { udid } => cmd::activate::activate(udid.as_deref(), mode),
-        Cmd::Deactivate { udid } => cmd::activate::deactivate(udid.as_deref(), mode),
+            cmd::mobilegestalt::query(udid.as_deref(), mode, &key, output),
+        Cmd::Activate   { udid } => cmd::activate::activate(udid.as_deref(), mode, output),
+        Cmd::Deactivate { udid } => cmd::activate::deactivate(udid.as_deref(), mode, output),
         Cmd::Setup { action } => match action {
             SetupAction::Status { udid } =>
-                cmd::setup::status(udid.as_deref(), mode),
+                cmd::setup::status(udid.as_deref(), mode, output),
             SetupAction::Skip { udid } =>
-                cmd::setup::skip(udid.as_deref(), mode),
+                cmd::setup::skip(udid.as_deref(), mode, output),
             SetupAction::Enroll { org, supervision_cert, supervision_key, udid } =>
-                cmd::setup::enroll(udid.as_deref(), mode, &org, &supervision_cert, &supervision_key),
+                cmd::setup::enroll(udid.as_deref(), mode, &org, &supervision_cert, &supervision_key, output),
         },
         Cmd::Devicename { name, udid } => {
             let mut session = cmd::open_session(udid.as_deref(), mode)?;
@@ -718,37 +734,58 @@ fn main() -> Result<()> {
                 None => {
                     let v = session.lockdown().get_value(None, "DeviceName")
                         .map_err(|e| anyhow::anyhow!("{e}"))?;
-                    println!("{}", v.as_string().unwrap_or("(unknown)"));
+                    if output.is_json() {
+                        #[derive(serde::Serialize)]
+                        struct DeviceNameInfo { name: String }
+                        cmd::output::print_json(&DeviceNameInfo {
+                            name: v.as_string().unwrap_or("(unknown)").to_owned()
+                        })?;
+                    } else {
+                        println!("{}", v.as_string().unwrap_or("(unknown)"));
+                    }
                 }
                 Some(n) => {
                     session.lockdown().set_value(None, "DeviceName", plist::Value::String(n.clone()))
                         .map_err(|e| anyhow::anyhow!("{e}"))?;
-                    eprintln!("device name set to {n:?}");
+                    if output.is_json() {
+                        cmd::output::print_json(&cmd::output::ActionResult::with_msg(
+                            format!("device name set to {n:?}")
+                        ))?;
+                    } else {
+                        eprintln!("device name set to {n:?}");
+                    }
                 }
             }
             Ok(())
         }
-        Cmd::Version { udid } => cmd::version::run(udid.as_deref()),
+        Cmd::Version { udid } => cmd::version::run(udid.as_deref(), output),
         Cmd::Orientation { action } => match action {
             OrientationAction::Get { udid } =>
-                cmd::orientation::get(udid.as_deref(), mode),
+                cmd::orientation::get(udid.as_deref(), mode, output),
             OrientationAction::Set { direction, bundle_id, runner_bundle_id, xctest_config, udid } =>
                 cmd::orientation::set(
                     udid.as_deref(), &direction,
                     bundle_id.as_deref(), &runner_bundle_id, &xctest_config,
+                    output,
                 ),
         },
         Cmd::Lang { set_lang, set_locale, udid } =>
-            cmd::lang::run(udid.as_deref(), set_lang.as_deref(), set_locale.as_deref(), mode),
+            cmd::lang::run(udid.as_deref(), set_lang.as_deref(), set_locale.as_deref(), mode, output),
         Cmd::Date { timezone, sync, udid } =>
-            cmd::timezone::run(udid.as_deref(), timezone.as_deref(), sync, mode),
-        Cmd::Rsd { udid }     => cmd::rsd::run(udid.as_deref()),
-        Cmd::Mounter { action } => match action {
-            MounterAction::Mount  { udid } => cmd::mounter::mount(udid.as_deref()),
-            MounterAction::Status { udid } => cmd::mounter::status(udid.as_deref()),
+            cmd::timezone::run(udid.as_deref(), timezone.as_deref(), sync, mode, output),
+        Cmd::Rsd { udid }     => cmd::rsd::run(udid.as_deref(), output),
+        Cmd::Tunnel { action } => match action {
+            TunnelAction::Start  => cmd::tunnel::start(output),
+            TunnelAction::Stop   => cmd::tunnel::stop(output),
+            TunnelAction::List   => cmd::tunnel::list(output),
+            TunnelAction::Daemon => cmd::tunnel::daemon(),
         },
-        Cmd::Perf { json, interval, udid } =>
-            cmd::perf::run(udid.as_deref(), json, interval),
+        Cmd::Mounter { action } => match action {
+            MounterAction::Mount  { udid } => cmd::mounter::mount(udid.as_deref(), output),
+            MounterAction::Status { udid } => cmd::mounter::status(udid.as_deref(), output),
+        },
+        Cmd::Perf { interval, udid } =>
+            cmd::perf::run(udid.as_deref(), output, interval),
         Cmd::Runtest { bundle_id, test_runner_bundle_id, xctest_config,
                        tests_to_run, tests_to_skip, xctest, env, udid } =>
             cmd::runtest::run_test(
@@ -770,39 +807,51 @@ fn main() -> Result<()> {
             ),
         Cmd::Afc { action } => match action {
             AfcAction::Ls   { long, path, app, udid } =>
-                cmd::afc::ls(udid.as_deref(), mode, &path, long, app.as_deref()),
+                cmd::afc::ls(udid.as_deref(), mode, &path, long, app.as_deref(), output),
             AfcAction::Stat { path, app, udid } =>
-                cmd::afc::stat(udid.as_deref(), mode, &path, app.as_deref()),
+                cmd::afc::stat(udid.as_deref(), mode, &path, app.as_deref(), output),
             AfcAction::Info { app, udid } =>
-                cmd::afc::info(udid.as_deref(), mode, app.as_deref()),
+                cmd::afc::info(udid.as_deref(), mode, app.as_deref(), output),
             AfcAction::Pull { remote, local, app, udid } =>
-                cmd::afc::pull(udid.as_deref(), mode, &remote, std::path::Path::new(&local), app.as_deref()),
+                cmd::afc::pull(udid.as_deref(), mode, &remote, std::path::Path::new(&local), app.as_deref(), output),
             AfcAction::Push { local, remote, app, udid } =>
-                cmd::afc::push(udid.as_deref(), mode, std::path::Path::new(&local), &remote, app.as_deref()),
+                cmd::afc::push(udid.as_deref(), mode, std::path::Path::new(&local), &remote, app.as_deref(), output),
             AfcAction::Rm   { path, app, udid } =>
-                cmd::afc::rm(udid.as_deref(), mode, &path, app.as_deref()),
+                cmd::afc::rm(udid.as_deref(), mode, &path, app.as_deref(), output),
             AfcAction::Mkdir { path, app, udid } =>
-                cmd::afc::mkdir(udid.as_deref(), mode, &path, app.as_deref()),
+                cmd::afc::mkdir(udid.as_deref(), mode, &path, app.as_deref(), output),
             AfcAction::Mv   { from, to, app, udid } =>
-                cmd::afc::mv(udid.as_deref(), mode, &from, &to, app.as_deref()),
+                cmd::afc::mv(udid.as_deref(), mode, &from, &to, app.as_deref(), output),
         },
         Cmd::Apps { action }  => match action {
             AppsAction::List { udid, system, all } =>
-                cmd::apps::list::run(udid.as_deref(), system, all, mode),
+                cmd::apps::list::run(udid.as_deref(), system, all, mode, output),
             AppsAction::Install { ipa, udid } =>
-                cmd::apps::install::run(udid.as_deref(), &ipa, mode),
+                cmd::apps::install::run(udid.as_deref(), &ipa, mode, output),
             AppsAction::Uninstall { bundle_id, udid } =>
-                cmd::apps::uninstall::run(udid.as_deref(), &bundle_id, mode),
+                cmd::apps::uninstall::run(udid.as_deref(), &bundle_id, mode, output),
             AppsAction::Launch { bundle_id, terminate_existing, udid } => {
                 let mut session = cmd::open_session(udid.as_deref(), mode)?;
                 let pid = cmd::apps::launch::run(&mut session, &bundle_id, terminate_existing)?;
-                println!("launched {bundle_id} → pid {pid}");
+                if output.is_json() {
+                    #[derive(serde::Serialize)]
+                    struct LaunchResult { ok: bool, pid: i64 }
+                    cmd::output::print_json(&LaunchResult { ok: true, pid })?;
+                } else {
+                    println!("launched {bundle_id} → pid {pid}");
+                }
                 Ok(())
             }
             AppsAction::Kill { pid, udid } => {
                 let mut session = cmd::open_session(udid.as_deref(), mode)?;
                 cmd::apps::kill::run(&mut session, pid)?;
-                println!("sent SIGKILL to pid {pid}");
+                if output.is_json() {
+                    cmd::output::print_json(&cmd::output::ActionResult::with_msg(
+                        format!("sent SIGKILL to pid {pid}")
+                    ))?;
+                } else {
+                    println!("sent SIGKILL to pid {pid}");
+                }
                 Ok(())
             }
         },

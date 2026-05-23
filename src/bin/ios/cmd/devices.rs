@@ -3,13 +3,40 @@ use comfy_table::{presets::UTF8_FULL_CONDENSED, Table};
 use ios_rs::lockdown::LockdownSession;
 use ios_rs::usbmux::Connection;
 
-pub fn run() -> Result<()> {
+use crate::cmd::output::{print_json, OutputMode};
+
+#[derive(serde::Serialize)]
+struct DeviceEntry {
+    udid:        String,
+    name:        String,
+    connection:  String,
+    ios_version: String,
+}
+
+pub fn run(output: OutputMode) -> Result<()> {
     let mut conn = Connection::open()?;
     let devices = conn.list_devices()?;
 
     if devices.is_empty() {
+        if output.is_json() {
+            let empty: Vec<DeviceEntry> = vec![];
+            return print_json(&empty);
+        }
         println!("No devices connected.");
         return Ok(());
+    }
+
+    if output.is_json() {
+        let entries: Vec<DeviceEntry> = devices.iter().map(|d| {
+            let (name, version) = fetch_display_info(d.device_id);
+            DeviceEntry {
+                udid:        d.serial.clone(),
+                name,
+                connection:  d.connection_type.to_string(),
+                ios_version: version,
+            }
+        }).collect();
+        return print_json(&entries);
     }
 
     let mut table = Table::new();

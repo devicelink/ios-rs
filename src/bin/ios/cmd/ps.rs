@@ -6,14 +6,19 @@ use ios_rs::tunnel::{ConnectionMode, DeviceSession};
 use plist::Value;
 
 use crate::cmd::open_session;
+use crate::cmd::output::{print_json, OutputMode};
 
-pub fn run(udid: Option<&str>) -> Result<()> {
+pub fn run(udid: Option<&str>, output: OutputMode) -> Result<()> {
     let mut session = open_session(udid, ConnectionMode::Rsd)?;
     let procs = list_processes(&mut session)?;
 
     if procs.is_empty() {
         eprintln!("no processes returned (developer mode required on iOS 17+)");
         return Ok(());
+    }
+
+    if output.is_json() {
+        return print_json(&procs);
     }
 
     let name_w = procs.iter().map(|p| p.name.len()).max().unwrap_or(10).clamp(10, 40);
@@ -33,6 +38,7 @@ pub fn run(udid: Option<&str>) -> Result<()> {
 
 // ── data model ────────────────────────────────────────────────────────────────
 
+#[derive(serde::Serialize)]
 pub struct ProcessInfo {
     pub pid:           u64,
     pub name:          String,
@@ -148,14 +154,9 @@ fn nska_decode_array(root: &Value, objects: &[Value]) -> Vec<Value> {
 }
 
 fn connect_hub(session: &mut DeviceSession) -> Result<Arc<DtxConn>> {
-    let rsd = session.connect_rsd().map_err(|e| anyhow!("RSD: {e}"))?;
-    let port = rsd
-        .service("com.apple.instruments.dtservicehub")
-        .ok_or_else(|| anyhow!("dtservicehub not in RSD catalog — is Developer Mode enabled?"))?
-        .port;
-    let tunnel = session.smoltcp_tunnel_ref().ok_or_else(|| anyhow!("no CDTunnel"))?;
-    let stream = tunnel.connect(tunnel.params.server_addr, port)
-        .map_err(|e| anyhow!("connect dtservicehub: {e}"))?;
+    let stream = session
+        .connect_rsd_service("com.apple.instruments.dtservicehub")
+        .map_err(|e| anyhow!("dtservicehub (is Developer Mode enabled?): {e}"))?;
     let stream_r = stream.try_clone().map_err(|e| anyhow!("stream clone: {e}"))?;
     Ok(Arc::new(DtxConn::new(stream_r, stream)))
 }

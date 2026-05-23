@@ -2,13 +2,29 @@ use anyhow::{Context, Result};
 use ios_rs::tunnel::ConnectionMode;
 
 use crate::cmd::open_session;
+use crate::cmd::output::{plist_to_json, print_json, OutputMode};
 
-pub fn query(udid: Option<&str>, mode: ConnectionMode, key: &str) -> Result<()> {
+#[derive(serde::Serialize)]
+struct GestaltResult {
+    key:   String,
+    value: serde_json::Value,
+}
+
+pub fn query(udid: Option<&str>, mode: ConnectionMode, key: &str, output: OutputMode) -> Result<()> {
     let mut session = open_session(udid, mode)?;
     // MobileGestalt keys are exposed via lockdownd root-domain GetValue.
     let val = session.lockdown()
         .get_value(None, key)
         .with_context(|| format!("MobileGestalt key {key:?}"))?;
+
+    if output.is_json() {
+        let result = GestaltResult {
+            key:   key.to_owned(),
+            value: plist_to_json(&val),
+        };
+        return print_json(&result);
+    }
+
     print_value(&val);
     Ok(())
 }

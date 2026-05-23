@@ -50,14 +50,25 @@ use ios_rs::lockdown::services::{Orientation, SpringBoardClient};
 use ios_rs::tunnel::ConnectionMode;
 
 use crate::cmd::open_session;
+use crate::cmd::output::{print_json, ActionResult, OutputMode};
 
 
-pub fn get(udid: Option<&str>, mode: ConnectionMode) -> Result<()> {
+#[derive(serde::Serialize)]
+struct OrientationInfo {
+    orientation: String,
+}
+
+pub fn get(udid: Option<&str>, mode: ConnectionMode, output: OutputMode) -> Result<()> {
     let mut session = open_session(udid, mode)?;
     let mut sbs = SpringBoardClient::connect(session.lockdown())
         .map_err(|e| anyhow::anyhow!("springboardservices: {e}"))?;
     let orientation = sbs.get_orientation()
         .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    if output.is_json() {
+        return print_json(&OrientationInfo { orientation: orientation.to_string() });
+    }
+
     println!("{orientation}  ({})", orientation as u8);
     Ok(())
 }
@@ -68,6 +79,7 @@ pub fn set(
     bundle_id:         Option<&str>,
     runner_bundle_id:  &str,
     xctest_config:     &str,
+    output:            OutputMode,
 ) -> Result<()> {
     let target = Orientation::parse(direction)
         .ok_or_else(|| anyhow::anyhow!(
@@ -80,6 +92,11 @@ pub fn set(
         let mut session = open_session(udid, ConnectionMode::Legacy)?;
         if let Ok(mut sbs) = SpringBoardClient::connect(session.lockdown()) {
             if sbs.set_orientation(target).is_ok() {
+                if output.is_json() {
+                    return print_json(&ActionResult::with_msg(
+                        format!("Orientation set to '{direction}'.")
+                    ));
+                }
                 println!("Orientation set to '{direction}'.");
                 return Ok(());
             }
@@ -163,6 +180,10 @@ pub fn set(
     ios_rs::xctest::run(tunnel, &rsd, &app_bundles, &config, &mut std::io::stderr())
         .map_err(|e| anyhow::anyhow!("test run: {e}"))?;
 
-    println!("Orientation set to '{direction}'.");
-    Ok(())
+    if output.is_json() {
+        print_json(&ActionResult::with_msg(format!("Orientation set to '{direction}'.")))
+    } else {
+        println!("Orientation set to '{direction}'.");
+        Ok(())
+    }
 }

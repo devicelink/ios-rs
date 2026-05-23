@@ -5,8 +5,9 @@ use ios_rs::lockdown::services::{AfcClient, InstallationProxy};
 use ios_rs::tunnel::ConnectionMode;
 
 use crate::cmd::open_session;
+use crate::cmd::output::{print_json, ActionResult, OutputMode};
 
-pub fn run(udid: Option<&str>, ipa_path: &str, mode: ConnectionMode) -> Result<()> {
+pub fn run(udid: Option<&str>, ipa_path: &str, mode: ConnectionMode, output: OutputMode) -> Result<()> {
     let ipa = Path::new(ipa_path);
     if !ipa.exists() { bail!("IPA not found: {ipa_path}"); }
     if ipa.extension().and_then(|e| e.to_str()) != Some("ipa") {
@@ -27,6 +28,11 @@ pub fn run(udid: Option<&str>, ipa_path: &str, mode: ConnectionMode) -> Result<(
     eprintln!("Installing…");
     let mut proxy = InstallationProxy::connect(session.lockdown())?;
     proxy.install_staged(&staged)?;
-    println!("Done.");
+
+    if output.is_json() {
+        print_json(&ActionResult::with_msg("installed"))?;
+    } else {
+        println!("Done.");
+    }
     Ok(())
 }

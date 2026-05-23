@@ -113,11 +113,15 @@ Commands:
   lang           Get or set device language and locale
   date           Get or set device timezone and clock
   rsd            Show RSD service catalogue via CDTunnel (iOS 17.4+)
+  tunnel         Manage the persistent RSD tunnel daemon
   mounter        Mount the personalized Developer Disk Image (unlocks Instruments / dtservicehub)
   perf           Live performance monitoring (CPU, RAM per process) via Instruments sysmontap
   runtest        Run XCTest bundle (UI or unit tests) on iOS 17.4+
   runwda         Start WebDriverAgent on iOS 17.4+
   help           Print this message or the help of the given subcommand(s)
+
+Options:
+  -o, --output <OUTPUT>  Output format: text (human-readable) or json. auto selects based on TTY detection [default: auto] [possible values: auto, text, json]
 ```
 
 ### `ios devices`
@@ -126,6 +130,9 @@ Commands:
 List connected iOS devices
 
 Usage: ios devices [OPTIONS]
+
+Options:
+  -o, --output <OUTPUT>  Output format: text (human-readable) or json. auto selects based on TTY detection [default: auto] [possible values: auto, text, json]
 ```
 
 ### `ios info`
@@ -134,6 +141,9 @@ Usage: ios devices [OPTIONS]
 Print device information from lockdownd
 
 Usage: ios info [OPTIONS]
+
+Options:
+  -o, --output <OUTPUT>  Output format: text (human-readable) or json. auto selects based on TTY detection [default: auto] [possible values: auto, text, json]
 ```
 
 ### `ios services`
@@ -142,6 +152,9 @@ Usage: ios info [OPTIONS]
 List available services on the device
 
 Usage: ios services [OPTIONS]
+
+Options:
+  -o, --output <OUTPUT>  Output format: text (human-readable) or json. auto selects based on TTY detection [default: auto] [possible values: auto, text, json]
 ```
 
 ### `ios relay`
@@ -156,6 +169,7 @@ Arguments:
 
 Options:
       --listen <LISTEN>  [default: 0]
+  -o, --output <OUTPUT>  Output format: text (human-readable) or json. auto selects based on TTY detection [default: auto] [possible values: auto, text, json]
 ```
 
 ### `ios watch`
@@ -164,6 +178,9 @@ Options:
 Watch for device attach/detach events
 
 Usage: ios watch [OPTIONS]
+
+Options:
+  -o, --output <OUTPUT>  Output format: text (human-readable) or json. auto selects based on TTY detection [default: auto] [possible values: auto, text, json]
 ```
 
 ### `ios version`
@@ -172,6 +189,9 @@ Usage: ios watch [OPTIONS]
 Show iOS version and available connection paths
 
 Usage: ios version [OPTIONS]
+
+Options:
+  -o, --output <OUTPUT>  Output format: text (human-readable) or json. auto selects based on TTY detection [default: auto] [possible values: auto, text, json]
 ```
 
 ### `ios apps`
@@ -188,6 +208,9 @@ Commands:
   launch     Launch an app by bundle ID (iOS 17.4+)
   kill       Kill a process by PID (sends SIGKILL, iOS 17.4+)
   help       Print this message or the help of the given subcommand(s)
+
+Options:
+  -o, --output <OUTPUT>  Output format: text (human-readable) or json. auto selects based on TTY detection [default: auto] [possible values: auto, text, json]
 ```
 
 ### `ios orientation`
@@ -201,6 +224,9 @@ Commands:
   get   Read current screen orientation from SpringBoard
   set   Set screen orientation via a short-lived XCUITest (see `ios orientation set --help`)
   help  Print this message or the help of the given subcommand(s)
+
+Options:
+  -o, --output <OUTPUT>  Output format: text (human-readable) or json. auto selects based on TTY detection [default: auto] [possible values: auto, text, json]
 ```
 
 ### `ios lang`
@@ -212,6 +238,7 @@ Usage: ios lang [OPTIONS]
 
 Options:
       --setlang <SET_LANG>      Set language (e.g. "en", "de", "zh-Hans")
+  -o, --output <OUTPUT>         Output format: text (human-readable) or json. auto selects based on TTY detection [default: auto] [possible values: auto, text, json]
       --setlocale <SET_LOCALE>  Set locale (e.g. "en_US", "de_DE")
 ```
 
@@ -224,6 +251,7 @@ Usage: ios date [OPTIONS]
 
 Options:
       --settz <TIMEZONE>  Set timezone (e.g. "America/New_York", "Europe/Berlin")
+  -o, --output <OUTPUT>   Output format: text (human-readable) or json. auto selects based on TTY detection [default: auto] [possible values: auto, text, json]
       --sync              Sync device clock to host time
 ```
 
@@ -233,6 +261,9 @@ Options:
 Show RSD service catalogue via CDTunnel (iOS 17.4+)
 
 Usage: ios rsd [OPTIONS]
+
+Options:
+  -o, --output <OUTPUT>  Output format: text (human-readable) or json. auto selects based on TTY detection [default: auto] [possible values: auto, text, json]
 ```
 
 ### `ios mounter`
@@ -246,6 +277,9 @@ Commands:
   mount   Mount the personalized DDI (downloads automatically on first run)
   status  Check if the developer disk image is currently mounted
   help    Print this message or the help of the given subcommand(s)
+
+Options:
+  -o, --output <OUTPUT>  Output format: text (human-readable) or json. auto selects based on TTY detection [default: auto] [possible values: auto, text, json]
 ```
 
 ### `ios perf`
@@ -256,8 +290,8 @@ Live performance monitoring (CPU, RAM per process) via Instruments sysmontap
 Usage: ios perf [OPTIONS]
 
 Options:
-      --json                 Output newline-delimited JSON instead of the live htop view
       --interval <INTERVAL>  Sampling interval in milliseconds (default: 1000) [default: 1000]
+  -o, --output <OUTPUT>      Output format: text (human-readable) or json. auto selects based on TTY detection [default: auto] [possible values: auto, text, json]
 ```
 
 ### `ios runtest`
@@ -270,6 +304,8 @@ Usage: ios runtest [OPTIONS] --test-runner-bundle-id <TEST_RUNNER_BUNDLE_ID> --x
 Options:
       --bundle-id <BUNDLE_ID>
           
+  -o, --output <OUTPUT>
+          Output format: text (human-readable) or json. auto selects based on TTY detection [default: auto] [possible values: auto, text, json]
       --test-runner-bundle-id <TEST_RUNNER_BUNDLE_ID>
           
       --xctest-config <XCTEST_CONFIG>
@@ -294,6 +330,8 @@ Usage: ios runwda [OPTIONS]
 Options:
       --bundleid <BUNDLE_ID>
           [default: com.facebook.WebDriverAgentRunner]
+  -o, --output <OUTPUT>
+          Output format: text (human-readable) or json. auto selects based on TTY detection [default: auto] [possible values: auto, text, json]
       --testrunnerbundleid <TEST_RUNNER_BUNDLE_ID>
           [default: com.facebook.WebDriverAgentRunner.xctrunner]
       --xctestconfig <XCTEST_CONFIG>

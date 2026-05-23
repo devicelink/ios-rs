@@ -4,27 +4,39 @@ use ios_rs::lockdown::services::mcinstall::{McInstallClient, SKIP_SETUP_KEYS};
 use ios_rs::tunnel::ConnectionMode;
 
 use crate::cmd::open_session;
+use crate::cmd::output::{print_json, ActionResult, OutputMode};
+
+#[derive(serde::Serialize)]
+struct SetupStatus {
+    supervised:   bool,
+    organization: Option<String>,
+    complete:     bool,
+}
 
 /// Show supervision and Setup-Assistant state.
-pub fn status(udid: Option<&str>, mode: ConnectionMode) -> Result<()> {
+pub fn status(udid: Option<&str>, mode: ConnectionMode, output: OutputMode) -> Result<()> {
     let mut session = open_session(udid, mode)?;
     let mut mc = McInstallClient::connect(session.lockdown()).context("connect MCInstall")?;
     mc.flush().context("flush")?;
     let config = mc.get_cloud_config().context("GetCloudConfiguration")?;
 
     let supervised = config.get("IsSupervised").and_then(|v| v.as_boolean()).unwrap_or(false);
-    let complete   = config.get("CloudConfigurationIsComplete").and_then(|v| v.as_boolean());
-    let org        = config.get("OrganizationName").and_then(|v| v.as_string());
+    let complete   = config.get("CloudConfigurationIsComplete").and_then(|v| v.as_boolean()).unwrap_or(false);
+    let org        = config.get("OrganizationName").and_then(|v| v.as_string()).map(|s| s.to_owned());
+
+    if output.is_json() {
+        return print_json(&SetupStatus { supervised, organization: org, complete });
+    }
 
     println!("supervised:    {supervised}");
-    if let Some(name) = org { println!("organization:  {name}"); }
-    if let Some(done) = complete { println!("setup complete: {done}"); }
+    if let Some(ref name) = org { println!("organization:  {name}"); }
+    println!("setup complete: {complete}");
     Ok(())
 }
 
 /// Skip the Setup Assistant by sending CloudConfigurationIsComplete.
 /// Works on freshly erased or provisioned devices stuck on the Hello/setup screen.
-pub fn skip(udid: Option<&str>, mode: ConnectionMode) -> Result<()> {
+pub fn skip(udid: Option<&str>, mode: ConnectionMode, output: OutputMode) -> Result<()> {
     let mut session = open_session(udid, mode)?;
     let mut mc = McInstallClient::connect(session.lockdown()).context("connect MCInstall")?;
     mc.flush().context("flush")?;
@@ -37,7 +49,11 @@ pub fn skip(udid: Option<&str>, mode: ConnectionMode) -> Result<()> {
     ));
 
     mc.set_cloud_config(cfg).context("SetCloudConfiguration")?;
-    println!("Setup Assistant skipped — device will proceed past first-run screens");
+    if output.is_json() {
+        print_json(&ActionResult::with_msg("Setup Assistant skipped"))?;
+    } else {
+        println!("Setup Assistant skipped — device will proceed past first-run screens");
+    }
     Ok(())
 }
 
@@ -51,6 +67,7 @@ pub fn enroll(
     org:       &str,
     cert_path: &str,
     key_path:  &str,
+    output:    OutputMode,
 ) -> Result<()> {
     let cert_der = load_der_or_pem_cert(cert_path)
         .with_context(|| format!("read supervision cert {cert_path}"))?;
@@ -93,7 +110,11 @@ pub fn enroll(
     mc.escalate_response(&signed).context("EscalateResponse")?;
     mc.proceed_keybag_migration().context("ProceedWithKeybagMigration")?;
 
-    println!("supervised enrollment complete — org={org:?}");
+    if output.is_json() {
+        print_json(&ActionResult::with_msg(format!("supervised enrollment complete — org={org:?}")))?;
+    } else {
+        println!("supervised enrollment complete — org={org:?}");
+    }
     Ok(())
 }
 

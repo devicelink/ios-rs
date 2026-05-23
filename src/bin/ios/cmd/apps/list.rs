@@ -4,10 +4,18 @@ use ios_rs::lockdown::services::{AppType, InstallationProxy};
 use ios_rs::tunnel::ConnectionMode;
 
 use crate::cmd::open_session;
+use crate::cmd::output::{print_json, OutputMode};
 
 const RSD_SERVICE: &str = "com.apple.mobile.installation_proxy.shim.remote";
 
-pub fn run(udid: Option<&str>, system: bool, all: bool, mode: ConnectionMode) -> Result<()> {
+#[derive(serde::Serialize)]
+struct AppEntry {
+    bundle_id: String,
+    name:      String,
+    version:   String,
+}
+
+pub fn run(udid: Option<&str>, system: bool, all: bool, mode: ConnectionMode, output: OutputMode) -> Result<()> {
     let mut session = open_session(udid, mode)?;
 
     let mut proxy = if session.is_rsd() {
@@ -22,6 +30,15 @@ pub fn run(udid: Option<&str>, system: bool, all: bool, mode: ConnectionMode) ->
     let app_type = if all { AppType::Any } else if system { AppType::System } else { AppType::User };
     let mut apps = proxy.list_apps(app_type)?;
     apps.sort_by(|a, b| a.name.cmp(&b.name));
+
+    if output.is_json() {
+        let entries: Vec<AppEntry> = apps.iter().map(|app| AppEntry {
+            bundle_id: app.bundle_id.clone(),
+            name:      app.name.clone(),
+            version:   app.short_version.clone(),
+        }).collect();
+        return print_json(&entries);
+    }
 
     if apps.is_empty() {
         println!("No apps found.");

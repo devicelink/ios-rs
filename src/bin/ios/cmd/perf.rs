@@ -13,6 +13,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::cmd::open_session;
+use crate::cmd::output::OutputMode;
 
 // ── fallback attribute lists (used when deviceinfo query fails) ───────────────
 
@@ -48,7 +49,8 @@ struct Snapshot {
 
 // ── entry point ───────────────────────────────────────────────────────────────
 
-pub fn run(udid: Option<&str>, json_mode: bool, interval_ms: u64) -> Result<()> {
+pub fn run(udid: Option<&str>, output: OutputMode, interval_ms: u64) -> Result<()> {
+    let json_mode = output.is_json();
     let mut session = open_session(udid, ConnectionMode::Rsd)?;
 
     if !json_mode {
@@ -160,17 +162,11 @@ fn connect_hub(session: &mut ios_rs::tunnel::DeviceSession) -> Result<Arc<DtxCon
         }
     }
 
-    let rsd = session.connect_rsd()
-        .map_err(|e| anyhow::anyhow!("RSD: {e}"))?;
-    let port = rsd.service("com.apple.instruments.dtservicehub")
-        .ok_or_else(|| anyhow::anyhow!(
-            "dtservicehub not in RSD catalog — is Developer Mode enabled?"
-        ))?.port;
-
-    let tunnel = session.smoltcp_tunnel_ref()
-        .ok_or_else(|| anyhow::anyhow!("no CDTunnel"))?;
-    let stream = tunnel.connect(tunnel.params.server_addr, port)
-        .map_err(|e| anyhow::anyhow!("connect dtservicehub: {e}"))?;
+    let stream = session
+        .connect_rsd_service("com.apple.instruments.dtservicehub")
+        .map_err(|e| anyhow::anyhow!(
+            "dtservicehub (is Developer Mode enabled?): {e}"
+        ))?;
     let stream_r = stream.try_clone()
         .map_err(|e| anyhow::anyhow!("stream clone: {e}"))?;
     Ok(Arc::new(DtxConn::new(stream_r, stream)))

@@ -23,6 +23,12 @@ use sha2::{Digest, Sha384};
 
 use ios_rs::tunnel::ConnectionMode;
 use crate::cmd::open_session;
+use crate::cmd::output::{print_json, ActionResult, OutputMode};
+
+#[derive(serde::Serialize)]
+struct MounterStatus {
+    mounted: bool,
+}
 
 // ── DDI repo constants ────────────────────────────────────────────────────────
 
@@ -33,7 +39,7 @@ const DDI_TRUSTCACHE:  &str = "PersonalizedImages/Xcode_iOS_DDI_Personalized/Ima
 
 // ── public entry points ───────────────────────────────────────────────────────
 
-pub fn mount(udid: Option<&str>) -> Result<()> {
+pub fn mount(udid: Option<&str>, output: OutputMode) -> Result<()> {
     let mut session = open_session(udid, ConnectionMode::Rsd)?;
 
     // ── 1. Fetch DDI files (cached) ──────────────────────────────────────────
@@ -157,29 +163,46 @@ pub fn mount(udid: Option<&str>) -> Result<()> {
         }
     }
 
-    eprintln!("[mounter] mounted. Developer services are now available.");
+    if output.is_json() {
+        print_json(&ActionResult::with_msg("mounted"))?;
+    } else {
+        eprintln!("[mounter] mounted. Developer services are now available.");
+    }
     Ok(())
 }
 
-pub fn status(udid: Option<&str>) -> Result<()> {
+pub fn status(udid: Option<&str>, output: OutputMode) -> Result<()> {
     let mut session = open_session(udid, ConnectionMode::Rsd)?;
     let mut sock = session.connect_rsd_shim(
             "com.apple.mobile.mobile_image_mounter.shim.remote")
         .context("connect mounter shim")?;
+
+    let mut mounted = false;
     for img_type in &["Personalized", "Developer"] {
         let req = plist_dict! { "Command" => "LookupImage", "ImageType" => *img_type };
         send_plist(&mut sock, &req)?;
         match recv_plist(&mut sock) {
             Ok(resp) => {
-                eprintln!("[mounter] LookupImage({img_type}): {resp:?}");
-                if resp_image_present(&resp) {
-                    println!("Developer disk image ({img_type}): mounted");
-                } else {
-                    println!("Developer disk image ({img_type}): not mounted");
+                let present = resp_image_present(&resp);
+                if present { mounted = true; }
+                if !output.is_json() {
+                    eprintln!("[mounter] LookupImage({img_type}): {resp:?}");
+                    if present {
+                        println!("Developer disk image ({img_type}): mounted");
+                    } else {
+                        println!("Developer disk image ({img_type}): not mounted");
+                    }
                 }
             }
-            Err(e) => eprintln!("[mounter] LookupImage({img_type}) error: {e}"),
+            Err(e) => {
+                if !output.is_json() {
+                    eprintln!("[mounter] LookupImage({img_type}) error: {e}");
+                }
+            }
         }
+    }
+    if output.is_json() {
+        print_json(&MounterStatus { mounted })?;
     }
     Ok(())
 }
