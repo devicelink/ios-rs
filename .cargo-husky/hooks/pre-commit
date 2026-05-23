@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
-# Regenerates the README help section when CLI source files are staged.
+# Runs lint and regenerates the README help section when source files are staged.
 set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
 
-# Only run when CLI-affecting files are staged
+# Only run when source-affecting files are staged
 if ! git diff --cached --name-only | grep -qE '^(src/|Cargo\.toml|Cargo\.lock)'; then
   exit 0
 fi
+
+echo "Running clippy + fmt check..."
+just lint
 
 echo "CLI sources changed — regenerating README help section..."
 "$ROOT/scripts/update-readme-help.sh"
