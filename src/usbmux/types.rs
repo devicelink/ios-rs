@@ -82,6 +82,7 @@ pub enum Event {
     DeviceDetached { device_id: u32 },
     /// usbmux tunnel is now open — stop using the codec, use the raw socket
     Connected { tag: u32 },
+    RequestOk { tag: u32 },
     RequestFailed { tag: u32, code: ResultCode },
     Buid(String),
     PairRecord { udid: String, record: Vec<u8> },

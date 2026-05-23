@@ -1,9 +1,13 @@
+pub mod activation;
 pub mod afc;
+pub mod amfi;
 pub mod diagnostics;
 pub mod installation_proxy;
+pub mod mcinstall;
 pub mod screenshot;
 pub mod springboard;
 pub mod syslog;
+pub mod wireless;
 
 pub use afc::{
     AfcClient, AfcDeviceInfo, FileInfo, FileType,

@@ -1,5 +1,9 @@
 # ios-rs
 
+[![CI](https://github.com/devicelink/ios-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/devicelink/ios-rs/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![MSRV](https://img.shields.io/badge/rustc-1.75+-blue.svg)](https://blog.rust-lang.org/2023/12/28/Rust-1.75.0.html)
+
 A Rust crate for interacting with iOS devices over USB via usbmuxd. Implements the full iOS 17+ connection stack from scratch — usbmux framing, lockdownd sessions, CDTunnel/RSD, RemoteXPC over HTTP/2, and a userspace IPv6 stack — without any Apple SDK dependency.
 
 Tested against an iPhone SE running iOS 18.7.1.
@@ -74,37 +78,46 @@ Interact with iOS devices via usbmuxd
 Usage: ios [OPTIONS] <COMMAND>
 
 Commands:
-  devices       List connected iOS devices
-  info          Print device information from lockdownd
-  services      List available services on the device
-  relay         Forward a local TCP port to a device service port
-  watch         Watch for device attach/detach events
-  screenshot    Capture a screenshot (PNG)
-  reboot        Reboot the device
-  shutdown      Shut down the device
-  diagnostics   Device diagnostics (battery, full dump)
-  syslog        Stream live syslog output from the device (Ctrl-C to stop)
-  crash         Crash report management
-  notification  Darwin notification proxy
-  ps            List running processes (requires Developer Mode)
-  location      Simulate or clear device GPS location (requires Developer Mode)
-  oslog         Stream structured os_log output (Ctrl-C to stop)
-  deviceip      Show device IP / network addresses
-  pair          Pair with the device.  Without flags: shows Trust dialog on device. Supervised mode (no dialog): use --supervision-p12 or --supervision-cert+--supervision-key
-  unpair        Remove the pairing record for this device
-  devicename    Get or set the device name
-  version       Show iOS version and available connection paths
-  afc           Browse and transfer files on the device media partition (DCIM, Books, …)
-  apps          App management (list, install, uninstall)
-  orientation   Get or set screen orientation (set requires pre-installed OrientationHelper XCTest)
-  lang          Get or set device language and locale
-  date          Get or set device timezone and clock
-  rsd           Show RSD service catalogue via CDTunnel (iOS 17.4+)
-  mounter       Mount the personalized Developer Disk Image (unlocks Instruments / dtservicehub)
-  perf          Live performance monitoring (CPU, RAM per process) via Instruments sysmontap
-  runtest       Run XCTest bundle (UI or unit tests) on iOS 17.4+
-  runwda        Start WebDriverAgent on iOS 17.4+
-  help          Print this message or the help of the given subcommand(s)
+  devices        List connected iOS devices
+  info           Print device information from lockdownd
+  services       List available services on the device
+  relay          Forward a local TCP port to a device service port
+  watch          Watch for device attach/detach events
+  screenshot     Capture a screenshot (PNG)
+  reboot         Reboot the device
+  shutdown       Shut down the device
+  diagnostics    Device diagnostics (battery, full dump)
+  syslog         Stream live syslog output from the device (Ctrl-C to stop)
+  crash          Crash report management
+  notification   Darwin notification proxy
+  ps             List running processes (requires Developer Mode)
+  location       Simulate or clear device GPS location (requires Developer Mode)
+  oslog          Stream structured os_log output (Ctrl-C to stop)
+  deviceip       Show device IP / network addresses
+  pair           Pair with the device.  Without flags: shows Trust dialog on device. With --supervision-cert + --supervision-key: pairs silently (supervised devices). To extract from a P12: openssl pkcs12 -in org.p12 -legacy -passin pass:PW -nokeys -clcerts | openssl x509 > cert.pem openssl pkcs12 -in org.p12 -legacy -passin pass:PW -nocerts -nodes | openssl pkey > key.pem
+  unpair         Remove the pairing record for this device
+  pair-export    Export the pair record from usbmuxd to a plist file
+  pair-import    Import a pair record plist file into usbmuxd
+  devmode        Developer mode status and activation
+  erase          Erase the device (factory reset) — irreversible
+  wifi           Enable or disable Wi-Fi pairing connections
+  mobilegestalt  Query a MobileGestalt key
+  activate       Activate the device via Apple's activation servers
+  deactivate     Deactivate the device (returns it to the unactivated state)
+  setup          First-run setup and supervised enrollment
+  devicename     Get or set the device name
+  version        Show iOS version and available connection paths
+  afc            Browse and transfer files on the device media partition (DCIM, Books, …)
+  apps           App management (list, install, uninstall)
+  orientation    Get or set screen orientation (set requires pre-installed OrientationHelper XCTest)
+  lang           Get or set device language and locale
+  date           Get or set device timezone and clock
+  rsd            Show RSD service catalogue via CDTunnel (iOS 17.4+)
+  mounter        Mount the personalized Developer Disk Image (unlocks Instruments / dtservicehub)
+  perf           Live performance monitoring (CPU, RAM per process) via Instruments sysmontap
+  runtest        Run XCTest bundle (UI or unit tests) on iOS 17.4+
+  runwda         Start WebDriverAgent on iOS 17.4+
+  help           Print this message or the help of the given subcommand(s)
 ```
 
 ### `ios devices`

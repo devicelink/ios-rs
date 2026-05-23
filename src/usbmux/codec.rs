@@ -160,7 +160,7 @@ impl Codec {
                     self.pending_connects.retain(|&t| t != tag);
                     if code == ResultCode::Ok { return Some(Event::Connected { tag }); }
                 }
-                if code == ResultCode::Ok { None } else { Some(Event::RequestFailed { tag, code }) }
+                if code == ResultCode::Ok { Some(Event::RequestOk { tag }) } else { Some(Event::RequestFailed { tag, code }) }
             }
             "" => {
                 if let Some(list) = env.device_list {
