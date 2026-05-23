@@ -145,18 +145,16 @@ enum Cmd {
     },
 
     /// Pair with the device.  Without flags: shows Trust dialog on device.
-    /// Supervised mode (no dialog): use --supervision-p12 or --supervision-cert+--supervision-key.
+    /// With --supervision-cert + --supervision-key: pairs silently (supervised devices).
+    /// To extract from a P12: openssl pkcs12 -in org.p12 -legacy -passin pass:PW
+    ///                           -nokeys -clcerts | openssl x509 > cert.pem
+    ///                         openssl pkcs12 -in org.p12 -legacy -passin pass:PW
+    ///                           -nocerts -nodes | openssl pkey > key.pem
     Pair {
-        /// P12/PFX file containing the supervision certificate and private key.
-        #[arg(long)]
-        supervision_p12: Option<String>,
-        /// Password for the P12 file (default: empty string).
-        #[arg(long)]
-        supervision_password: Option<String>,
         /// Supervision certificate file (DER or PEM). Requires --supervision-key.
         #[arg(long)]
         supervision_cert: Option<String>,
-        /// Supervision RSA private key file (PEM PKCS#8/PKCS#1 or DER). Requires --supervision-cert.
+        /// Supervision private key file (PEM PKCS#8 or PKCS#1). Requires --supervision-cert.
         #[arg(long)]
         supervision_key: Option<String>,
         #[arg(long)]
@@ -167,6 +165,69 @@ enum Cmd {
     Unpair {
         #[arg(long)]
         udid: Option<String>,
+    },
+
+    /// Export the pair record from usbmuxd to a plist file
+    PairExport {
+        /// Output path (defaults to <UDID>.plist)
+        path: Option<String>,
+        #[arg(long)]
+        udid: Option<String>,
+    },
+
+    /// Import a pair record plist file into usbmuxd
+    PairImport {
+        /// Path to the .plist pair record file
+        path: String,
+        #[arg(long)]
+        udid: Option<String>,
+    },
+
+    /// Developer mode status and activation
+    Devmode {
+        #[command(subcommand)]
+        action: DevmodeAction,
+    },
+
+    /// Erase the device (factory reset) — irreversible
+    Erase {
+        /// Skip the confirmation prompt
+        #[arg(long, short = 'y')]
+        yes: bool,
+        #[arg(long)]
+        udid: Option<String>,
+    },
+
+    /// Enable or disable Wi-Fi pairing connections
+    Wifi {
+        #[command(subcommand)]
+        action: WifiAction,
+    },
+
+    /// Query a MobileGestalt key
+    Mobilegestalt {
+        /// Key name (e.g. UniqueChipID, HardwareModel, SupportedDeviceFamilies)
+        key: String,
+        #[arg(long)]
+        udid: Option<String>,
+    },
+
+    /// Activate the device via Apple's activation servers
+    Activate {
+        #[arg(long)]
+        udid: Option<String>,
+    },
+
+    /// Deactivate the device (returns it to the unactivated state)
+    Deactivate {
+        #[arg(long)]
+        udid: Option<String>,
+    },
+
+    /// First-run setup and supervised enrollment
+    Setup {
+        #[command(subcommand)]
+        action: SetupAction,
     },
 
     /// Get or set the device name
@@ -338,6 +399,67 @@ enum NotificationAction {
     Observe {
         /// Notification name to watch (omit to observe all)
         name: Option<String>,
+        #[arg(long)]
+        udid: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum DevmodeAction {
+    /// Show current developer mode status
+    Status {
+        #[arg(long)]
+        udid: Option<String>,
+    },
+    /// Enable developer mode (may require a reboot)
+    Enable {
+        #[arg(long)]
+        udid: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum WifiAction {
+    /// Show whether Wi-Fi connections are enabled
+    Status {
+        #[arg(long)]
+        udid: Option<String>,
+    },
+    /// Enable Wi-Fi connections
+    On {
+        #[arg(long)]
+        udid: Option<String>,
+    },
+    /// Disable Wi-Fi connections
+    Off {
+        #[arg(long)]
+        udid: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum SetupAction {
+    /// Show supervision and Setup Assistant state
+    Status {
+        #[arg(long)]
+        udid: Option<String>,
+    },
+    /// Skip the Setup Assistant (sends CloudConfigurationIsComplete)
+    Skip {
+        #[arg(long)]
+        udid: Option<String>,
+    },
+    /// Supervised enrollment: skip setup and mark device as supervised
+    Enroll {
+        /// Organisation name shown on the device
+        #[arg(long)]
+        org: String,
+        /// Supervision certificate file (DER or PEM)
+        #[arg(long)]
+        supervision_cert: String,
+        /// Supervision private key file (PEM PKCS#8 or PKCS#1)
+        #[arg(long)]
+        supervision_key: String,
         #[arg(long)]
         udid: Option<String>,
     },
@@ -561,15 +683,35 @@ fn main() -> Result<()> {
         Cmd::Oslog { process, level, json, udid } =>
             cmd::oslog::run(udid.as_deref(), process.as_deref(), level.as_deref(), json),
         Cmd::Deviceip { udid } => cmd::deviceip::run(udid.as_deref()),
-        Cmd::Pair { udid, supervision_p12, supervision_password, supervision_cert, supervision_key } =>
-            cmd::pair::pair(
-                udid.as_deref(),
-                supervision_cert.as_deref(),
-                supervision_key.as_deref(),
-                supervision_p12.as_deref(),
-                supervision_password.as_deref(),
-            ),
+        Cmd::Pair { udid, supervision_cert, supervision_key } =>
+            cmd::pair::pair(udid.as_deref(), supervision_cert.as_deref(), supervision_key.as_deref()),
         Cmd::Unpair { udid } => cmd::pair::unpair(udid.as_deref()),
+        Cmd::PairExport { path, udid } =>
+            cmd::pair::export(udid.as_deref(), path.as_deref()),
+        Cmd::PairImport { path, udid } =>
+            cmd::pair::import(udid.as_deref(), &path),
+        Cmd::Devmode { action } => match action {
+            DevmodeAction::Status { udid } => cmd::devmode::status(udid.as_deref(), mode),
+            DevmodeAction::Enable { udid } => cmd::devmode::enable(udid.as_deref(), mode),
+        },
+        Cmd::Erase { yes, udid } => cmd::erase::run(udid.as_deref(), mode, yes),
+        Cmd::Wifi { action } => match action {
+            WifiAction::Status { udid } => cmd::wifi::status(udid.as_deref(), mode),
+            WifiAction::On     { udid } => cmd::wifi::set(udid.as_deref(), mode, true),
+            WifiAction::Off    { udid } => cmd::wifi::set(udid.as_deref(), mode, false),
+        },
+        Cmd::Mobilegestalt { key, udid } =>
+            cmd::mobilegestalt::query(udid.as_deref(), mode, &key),
+        Cmd::Activate   { udid } => cmd::activate::activate(udid.as_deref(), mode),
+        Cmd::Deactivate { udid } => cmd::activate::deactivate(udid.as_deref(), mode),
+        Cmd::Setup { action } => match action {
+            SetupAction::Status { udid } =>
+                cmd::setup::status(udid.as_deref(), mode),
+            SetupAction::Skip { udid } =>
+                cmd::setup::skip(udid.as_deref(), mode),
+            SetupAction::Enroll { org, supervision_cert, supervision_key, udid } =>
+                cmd::setup::enroll(udid.as_deref(), mode, &org, &supervision_cert, &supervision_key),
+        },
         Cmd::Devicename { name, udid } => {
             let mut session = cmd::open_session(udid.as_deref(), mode)?;
             match name {

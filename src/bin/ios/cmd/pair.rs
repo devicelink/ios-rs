@@ -1,50 +1,59 @@
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result};
 
 use crate::cmd::resolve_device;
 
+pub fn export(udid: Option<&str>, path: Option<&str>) -> Result<()> {
+    let device = resolve_device(udid)?;
+    let mut conn = ios_rs::usbmux::Connection::open()?;
+    let raw = conn.read_pair_record(&device.serial)
+        .context("read pair record from usbmuxd")?;
+    let out_path = path.map(|s| s.to_owned())
+        .unwrap_or_else(|| format!("{}.plist", device.serial));
+    std::fs::write(&out_path, &raw)
+        .with_context(|| format!("write {out_path}"))?;
+    println!("pair record saved to {out_path}");
+    Ok(())
+}
+
+pub fn import(udid: Option<&str>, path: &str) -> Result<()> {
+    let device = resolve_device(udid)?;
+    let raw = std::fs::read(path)
+        .with_context(|| format!("read {path}"))?;
+    // Validate it's a valid plist before saving
+    let _: plist::Value = plist::from_bytes(&raw)
+        .with_context(|| format!("{path} is not a valid plist"))?;
+    let mut conn = ios_rs::usbmux::Connection::open()?;
+    conn.save_pair_record(&device.serial, raw)
+        .context("save pair record to usbmuxd")?;
+    println!("pair record imported from {path}");
+    Ok(())
+}
+
 pub fn pair(
-    udid:                Option<&str>,
-    supervision_cert:    Option<&str>,
-    supervision_key:     Option<&str>,
-    supervision_p12:     Option<&str>,
-    supervision_password: Option<&str>,
+    udid:             Option<&str>,
+    supervision_cert: Option<&str>,
+    supervision_key:  Option<&str>,
 ) -> Result<()> {
     let device = resolve_device(udid)?;
 
-    if let Some(p12_path) = supervision_p12 {
-        // P12 path — parse cert + key from the P12 file
-        let p12_bytes = std::fs::read(p12_path)
-            .with_context(|| format!("read P12 file {p12_path}"))?;
-        let password = supervision_password.unwrap_or("");
-        let (cert_der, key_der) = extract_from_p12(&p12_bytes, password)?;
-
-        ios_rs::lockdown::pairing::pair_supervised(
-            device.device_id, &device.serial, &cert_der, &key_der,
-        ).context("supervised pairing (P12)")?;
-        println!("supervised pair complete — pair record saved to usbmuxd");
-
-    } else if let (Some(cert_path), Some(key_path)) = (supervision_cert, supervision_key) {
-        // Explicit cert + key files
-        let cert_bytes = load_der_or_pem_cert(cert_path)
-            .with_context(|| format!("read supervision cert {cert_path}"))?;
-        let key_bytes = std::fs::read(key_path)
-            .with_context(|| format!("read supervision key {key_path}"))?;
-
-        ios_rs::lockdown::pairing::pair_supervised(
-            device.device_id, &device.serial, &cert_bytes, &key_bytes,
-        ).context("supervised pairing")?;
-        println!("supervised pair complete — pair record saved to usbmuxd");
-
-    } else if supervision_cert.is_some() || supervision_key.is_some() {
-        anyhow::bail!("--supervision-cert and --supervision-key must both be provided");
-
-    } else {
-        // Normal pairing — shows Trust dialog on device
-        ios_rs::lockdown::pairing::pair(device.device_id, &device.serial)
-            .context("pairing")?;
-        println!("paired successfully — pair record saved to usbmuxd");
+    match (supervision_cert, supervision_key) {
+        (Some(cert_path), Some(key_path)) => {
+            let cert_bytes = load_der_or_pem_cert(cert_path)
+                .with_context(|| format!("read supervision cert {cert_path}"))?;
+            let key_bytes = std::fs::read(key_path)
+                .with_context(|| format!("read supervision key {key_path}"))?;
+            ios_rs::lockdown::pairing::pair_supervised(
+                device.device_id, &device.serial, &cert_bytes, &key_bytes,
+            ).context("supervised pairing")?;
+            println!("supervised pair complete — pair record saved to usbmuxd");
+        }
+        (None, None) => {
+            ios_rs::lockdown::pairing::pair(device.device_id, &device.serial)
+                .context("pairing")?;
+            println!("paired successfully — pair record saved to usbmuxd");
+        }
+        _ => anyhow::bail!("--supervision-cert and --supervision-key must both be provided"),
     }
-
     Ok(())
 }
 
@@ -56,31 +65,13 @@ pub fn unpair(udid: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-// ── P12 parsing ───────────────────────────────────────────────────────────────
-
-fn extract_from_p12(p12_bytes: &[u8], password: &str) -> Result<(Vec<u8>, Vec<u8>)> {
-    let pfx = p12::PFX::parse(p12_bytes)
-        .map_err(|e| anyhow!("parse P12: {e:?}"))?;
-
-    let certs = pfx.cert_bags(password)
-        .map_err(|e| anyhow!("read cert bags (wrong password?): {e:?}"))?;
-    let cert_der = certs.into_iter().next()
-        .ok_or_else(|| anyhow!("no certificate found in P12"))?;
-
-    let keys = pfx.key_bags(password)
-        .map_err(|e| anyhow!("read key bags: {e:?}"))?;
-    let key_der = keys.into_iter().next()
-        .ok_or_else(|| anyhow!("no private key found in P12"))?;
-
-    Ok((cert_der, key_der))
-}
-
 // ── cert file helpers ─────────────────────────────────────────────────────────
 
-/// Load a certificate file — accepts DER (binary) or PEM (text) format.
+/// Load a cert — accepts DER (binary) or PEM (text, strips bag attributes).
 fn load_der_or_pem_cert(path: &str) -> Result<Vec<u8>> {
     let raw = std::fs::read(path)?;
-    if raw.starts_with(b"-----") {
+    if raw.starts_with(b"-----") || raw.windows(5).any(|w| w == b"-----") {
+        // Find PEM block (skip openssl bag attributes header)
         let pem = std::str::from_utf8(&raw)?;
         let mut b64 = String::new();
         let mut in_block = false;

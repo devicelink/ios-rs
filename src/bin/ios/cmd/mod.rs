@@ -1,9 +1,13 @@
+pub mod activate;
 pub mod afc;
 pub mod apps;
 pub mod crash;
+pub mod devmode;
 pub mod deviceip;
 pub mod diagnostics;
+pub mod erase;
 pub mod location;
+pub mod mobilegestalt;
 pub mod notification;
 pub mod oslog;
 pub mod pair;
@@ -21,8 +25,10 @@ pub mod relay;
 pub mod rsd;
 pub mod runtest;
 pub mod services;
+pub mod setup;
 pub mod version;
 pub mod watch;
+pub mod wifi;
 
 use anyhow::{bail, Result};
 use ios_rs::tunnel::{ConnectionMode, DeviceSession};

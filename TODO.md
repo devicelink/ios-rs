@@ -6,16 +6,16 @@ Comparison against [pymobiledevice3](https://github.com/doronz88/pymobiledevice3
 
 - [x] Pair device (`ios pair`) — generates RSA-2048 root/host/device certs, sends lockdownd Pair request, saves to usbmuxd
 - [x] Unpair device (`ios unpair`) — sends lockdownd Unpair, deletes record from usbmuxd
-- [ ] Save / read pair record to disk (usbmuxd stores it; disk export not implemented)
-- [ ] Enable developer mode (`amfi enable-developer-mode`, query status)
+- [x] Save / read pair record to disk (`ios pair-export [path]` / `ios pair-import <path>`)
+- [x] Enable developer mode (`ios devmode enable` / `ios devmode status`)
 - [x] Reboot device (`ios reboot`)
 - [x] Shut down device (`ios shutdown`)
-- [ ] Erase / factory reset
+- [x] Erase / factory reset (`ios erase [-y]`)
 - [x] Device name — get / set (`ios devicename [new-name]`)
-- [ ] Wi-Fi connections — enable / disable
-- [ ] MobileGestalt key queries (`mobilegestalt <key>`)
-- [ ] Device preparation / first-run setup (supervised enrolment)
-- [ ] Device activation / deactivation
+- [x] Wi-Fi connections — enable / disable (`ios wifi on/off/status`)
+- [x] MobileGestalt key queries (`ios mobilegestalt <key>`)
+- [x] Device preparation / first-run setup (`ios setup skip` / `ios setup enroll --org <name> --supervision-cert <cert> --supervision-key <key>`)
+- [x] Device activation / deactivation (`ios activate` / `ios deactivate`)
 
 ## File System (AFC)
 

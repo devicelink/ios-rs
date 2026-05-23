@@ -270,6 +270,7 @@ impl LockdownSession {
     /// Close the active session.
     pub fn stop_session(&mut self) -> Result<(), Error> {
         let Some(sid) = self.session_id.take() else { return Ok(()); };
+        if matches!(self.stream, Stream::Upgrading) { return Ok(()); }
         let req = StopSessionReq {
             request:    "StopSession",
             session_id: &sid,
@@ -431,8 +432,10 @@ impl LockdownSession {
         // Complete the TLS handshake eagerly — gives a real error instead of a
         // silent EOF if the cipher suite or certificate doesn't match.
         while conn.is_handshaking() {
-            conn.complete_io(&mut sock)
-                .map_err(|e| Error::Tls(format!("TLS handshake: {e}")))?;
+            if let Err(e) = conn.complete_io(&mut sock) {
+                self.stream = Stream::Plain(sock);
+                return Err(Error::Tls(format!("TLS handshake: {e}")));
+            }
         }
 
         self.stream = Stream::Tls(Box::new(StreamOwned::new(conn, sock)));

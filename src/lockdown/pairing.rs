@@ -386,18 +386,18 @@ fn build_cert(
 
 fn build_extensions(ski: &[u8; 20], kind: CertKind) -> Vec<Vec<u8>> {
     let mut exts = vec![
-        // SubjectKeyIdentifier (OID 2.5.29.14): raw 20-byte hash (no OCTET STRING wrapper,
-        // matching go-ios behaviour which iOS accepts)
+        // SubjectKeyIdentifier (OID 2.5.29.14)
+        // extnValue = OCTET STRING { OCTET STRING { 20-byte-hash } }
         der_seq(&[
             &der_oid(&[2, 5, 29, 14]),
-            &der_tag(0x04, ski),   // OCTET STRING wrapping the raw hash
+            &der_tag(0x04, &der_tag(0x04, ski)),
         ]),
     ];
 
     match kind {
         CertKind::Root => {
             // BasicConstraints critical, cA = TRUE
-            // value = OCTET STRING { SEQUENCE { BOOLEAN TRUE } }
+            // extnValue = OCTET STRING { SEQUENCE { BOOLEAN TRUE } }
             let bc_inner = der_seq(&[&der_bool(true)]);
             exts.push(der_seq(&[
                 &der_oid(&[2, 5, 29, 19]),
@@ -407,12 +407,13 @@ fn build_extensions(ski: &[u8; 20], kind: CertKind) -> Vec<Vec<u8>> {
         }
         CertKind::Leaf => {
             // KeyUsage critical: digitalSignature (bit 0) + keyEncipherment (bit 2)
-            // Encoded as BIT STRING: 0x05 (unused=5), 0xa0 (bits 0+2 set in high byte)
-            let ku_inner = der_seq(&[&der_tag(0x03, &[0x05, 0xa0])]);
+            // BIT STRING: 0x05 (unused=5), 0xa0 (bits 0+2 set in high byte)
+            // extnValue = OCTET STRING { BIT STRING { ... } }
+            let ku_bits = der_tag(0x03, &[0x05, 0xa0]);
             exts.push(der_seq(&[
                 &der_oid(&[2, 5, 29, 15]),
                 &der_bool(true),  // critical
-                &der_tag(0x04, &ku_inner),
+                &der_tag(0x04, &ku_bits),
             ]));
         }
     }
@@ -655,7 +656,7 @@ fn extract_pairing_challenge(resp: &plist::Dictionary) -> Result<Vec<u8>, Error>
 }
 
 /// Parse an RSA private key from bytes — accepts PEM (PKCS#8 or PKCS#1) or DER (PKCS#8 or PKCS#1).
-pub(crate) fn parse_rsa_key_bytes(bytes: &[u8]) -> Result<RsaPrivateKey, Error> {
+pub fn parse_rsa_key_bytes(bytes: &[u8]) -> Result<RsaPrivateKey, Error> {
     // PEM path
     if let Ok(s) = std::str::from_utf8(bytes) {
         if s.contains("-----") {
@@ -670,12 +671,13 @@ pub(crate) fn parse_rsa_key_bytes(bytes: &[u8]) -> Result<RsaPrivateKey, Error> 
 }
 
 /// Build a PKCS7 SignedData (CMS) message signing `content` with `key` and `cert_der`.
+/// Used for supervised pairing challenges and MCInstall escalation challenges.
 ///
 /// Matches go-pkcs7 AddSigner(cert, key, SignerInfoConfig{}) exactly:
 ///   - SHA1 digest
 ///   - Signed attributes: contentType + messageDigest
 ///   - RSA-SHA1 signature over DER(signedAttrs SET)
-fn build_pkcs7_signed_data(
+pub fn build_pkcs7_signed_data(
     content:  &[u8],
     cert_der: &[u8],
     key:      &RsaPrivateKey,
@@ -758,10 +760,11 @@ fn sha1_oid() -> Vec<u8> {
 /// Extract the raw DER bytes of issuer Name and serialNumber from a cert.
 fn extract_issuer_serial(cert_der: &[u8]) -> Result<(Vec<u8>, Vec<u8>), Error> {
     // Certificate ::= SEQUENCE { TBSCertificate, ... }
-    let (_, tbs_outer) = peel_tag(cert_der, 0x30)
+    // peel_tag returns (content_inside, rest_after_TLV)
+    let (cert_content, _) = peel_tag(cert_der, 0x30)
         .ok_or_else(|| err("cert: bad outer SEQUENCE".into()))?;
     // TBSCertificate ::= SEQUENCE { ... }
-    let (tbs_body, _) = peel_tag(tbs_outer, 0x30)
+    let (tbs_body, _) = peel_tag(cert_content, 0x30)
         .ok_or_else(|| err("cert: bad TBSCertificate SEQUENCE".into()))?;
 
     let mut pos = tbs_body;
