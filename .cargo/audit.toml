@@ -1,0 +1,8 @@
+[advisories]
+ignore = [
+    # RUSTSEC-2023-0071: Marvin Attack timing side-channel in rsa crate.
+    # No patched version is available. The RSA key here is used only for
+    # lockdownd pairing cert generation — it is ephemeral and never exposed
+    # as a secret, so this attack does not apply in practice.
+    "RUSTSEC-2023-0071",
+]
