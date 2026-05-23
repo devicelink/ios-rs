@@ -78,11 +78,7 @@ pub fn run(
     let min_level = parse_level(level.unwrap_or("default"));
     let mut stdout = std::io::BufWriter::new(std::io::stdout());
 
-    loop {
-        let entry = match read_entry(&mut stream) {
-            Ok(e)  => e,
-            Err(_) => break,
-        };
+    while let Ok(entry) = read_entry(&mut stream) {
         if entry.level_num < min_level { continue; }
         if let Some(p) = process {
             if !entry.process.to_lowercase().contains(&p.to_lowercase()) { continue; }
@@ -162,11 +158,11 @@ fn parse_entry(data: &[u8]) -> anyhow::Result<LogEntry> {
     let ts = format_timestamp(time_sec, time_usec);
 
     let mut off = 129;
-    let process   = read_cstring(&data, &mut off, procpath_len);
-    let _image    = read_cstring(&data, &mut off, imagepath_len);
-    let message   = read_cstring(&data, &mut off, message_len);
-    let subsystem = read_cstring(&data, &mut off, subsystem_len);
-    let category  = read_cstring(&data, &mut off, category_len);
+    let process   = read_cstring(data, &mut off, procpath_len);
+    let _image    = read_cstring(data, &mut off, imagepath_len);
+    let message   = read_cstring(data, &mut off, message_len);
+    let subsystem = read_cstring(data, &mut off, subsystem_len);
+    let category  = read_cstring(data, &mut off, category_len);
 
     let process = basename(&process);
 

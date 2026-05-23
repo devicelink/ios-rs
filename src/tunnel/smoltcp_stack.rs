@@ -271,7 +271,7 @@ fn promote_and_bridge(
             match sock.recv_slice(&mut buf) {
                 Ok(0) | Err(_) => break,
                 Ok(n) => {
-                    if let Err(_) = proxy.write_all(&buf[..n]) {
+                    if proxy.write_all(&buf[..n]).is_err() {
                         // Pipe full: save for next poll iteration.
                         write_buf.extend_from_slice(&buf[..n]);
                         break;

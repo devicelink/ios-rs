@@ -262,7 +262,7 @@ fn fetch_ddi_files() -> Result<(Vec<u8>, Vec<u8>, Vec<u8>)> {
 }
 
 /// Mount the CoreDevice DDI, extract Image.dmg + BuildManifest + trustcache.
-fn extract_from_core_device_ddi(ddi_path: &PathBuf) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>)> {
+fn extract_from_core_device_ddi(ddi_path: &std::path::Path) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>)> {
     let mount_point = "/tmp/ios-rs-ddi-extract";
     let _ = std::process::Command::new("hdiutil")
         .args(["detach", mount_point, "-quiet", "-force"])
@@ -413,10 +413,10 @@ fn tss_request(
         let d = id.as_dictionary();
         let bid = d.and_then(|d| d.get("ApBoardID"))
             .and_then(|v| v.as_string())
-            .and_then(|s| parse_hex_or_dec(s));
+            .and_then(parse_hex_or_dec);
         let cid = d.and_then(|d| d.get("ApChipID"))
             .and_then(|v| v.as_string())
-            .and_then(|s| parse_hex_or_dec(s));
+            .and_then(parse_hex_or_dec);
         bid == Some(board_id) && cid == Some(chip_id)
     }).ok_or_else(|| anyhow::anyhow!(
         "no BuildIdentity for board_id={board_id:#x} chip_id={chip_id:#x}"

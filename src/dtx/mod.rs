@@ -324,6 +324,7 @@ pub fn read_message<R: Read>(r: &mut R) -> Result<DtxMessage, Error> {
     read_message_inner(r, None)
 }
 
+#[allow(clippy::type_complexity)]
 fn read_message_inner<R: Read>(
     r: &mut R,
     // Only held briefly for each ACK, NOT across blocking reads.

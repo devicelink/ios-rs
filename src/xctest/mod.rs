@@ -303,10 +303,10 @@ pub fn run(
             } else { None }
         }
         while let Ok(msg) = incoming0.recv() {
-            let sel = msg.payload.as_ref().and_then(|v| archived_string(v)).unwrap_or_default();
+            let sel = msg.payload.as_ref().and_then(archived_string).unwrap_or_default();
             if sel.contains("requestChannelWithCode") {
                 let code = msg.aux.first().and_then(|a| if let AuxValue::Int32(v) = a { Some(*v) } else { None });
-                let ident = msg.aux.get(1).and_then(|a| decode_aux_str(a));
+                let ident = msg.aux.get(1).and_then(decode_aux_str);
                     if let (Some(code), Some(ident)) = (code, ident) {
                     if ident.contains("XCTestDriverInterface") {
                         // Sending on -(runner's code) routes to the runner via testmanagerd
@@ -333,7 +333,7 @@ pub fn run(
         let mut plan_started = false;
         while let Ok(msg) = incoming1.recv() {
             let selector = msg.payload.as_ref()
-                .and_then(|v| archived_string(v))
+                .and_then(archived_string)
                 .unwrap_or_default();
             // Decode first aux argument (the debug message text for logDebugMessage).
             let aux0 = msg.aux.first().and_then(|a| {

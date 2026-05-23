@@ -214,8 +214,8 @@ fn build_config(interval_ms: u64, proc_attrs: &[&str], sys_attrs: &[&str]) -> Ve
     let root = plist::Uid::new(objects.len() as u64);
     {
         let mut d = Dictionary::new();
-        d.insert("NS.keys".into(),    Value::Array(vec![k_ur, k_bm, k_si, k_cpu, k_phys, k_proc, k_sys].iter().map(|u| Value::Uid(*u)).collect()));
-        d.insert("NS.objects".into(), Value::Array(vec![v_ur, v_bm, v_si, v_true, v_true, v_proc, v_sys].iter().map(|u| Value::Uid(*u)).collect()));
+        d.insert("NS.keys".into(),    Value::Array([k_ur, k_bm, k_si, k_cpu, k_phys, k_proc, k_sys].iter().map(|u| Value::Uid(*u)).collect()));
+        d.insert("NS.objects".into(), Value::Array([v_ur, v_bm, v_si, v_true, v_true, v_proc, v_sys].iter().map(|u| Value::Uid(*u)).collect()));
         d.insert("$class".into(), Value::Uid(cls_dict));
         objects.push(Value::Dictionary(d));
     }
@@ -419,7 +419,7 @@ fn print_htop(snap: &Snapshot, cols: usize, rows: usize) {
             fmt_bytes(used), fmt_bytes(snap.phys_mem)));
     }
 
-    let name_w = cols.saturating_sub(42).min(28).max(10);
+    let name_w = cols.saturating_sub(42).clamp(10, 28);
     out.push_str(&format!("\n\x1b[7m {:>6}  {:<name_w$}  {:>6}  {:>8}  {:>8}\x1b[0m\n",
         "PID", "Name", "CPU%", "MEM", "VIRT", name_w = name_w));
 
