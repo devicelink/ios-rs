@@ -9,18 +9,29 @@ use ios_rs::usbmux::MuxSocket;
 use plist::Value;
 
 use crate::cmd::open_session;
+use crate::cmd::output::{print_json, ActionResult, OutputMode};
 
 const SHIM: &str = "com.apple.mobile.insecure_notification_proxy.shim.remote";
 
-pub fn post(udid: Option<&str>, mode: ConnectionMode, name: &str) -> Result<()> {
+#[derive(serde::Serialize)]
+struct NotificationEvent {
+    name: String,
+}
+
+pub fn post(udid: Option<&str>, mode: ConnectionMode, name: &str, output: OutputMode) -> Result<()> {
     let mut session = open_session(udid, mode)?;
     let mut stream  = session.connect_rsd_shim(SHIM).context("connect notification proxy")?;
     send_cmd(&mut stream, "PostNotification", Some(name))?;
-    eprintln!("posted: {name}");
+
+    if output.is_json() {
+        print_json(&ActionResult::with_msg(format!("posted: {name}")))?;
+    } else {
+        eprintln!("posted: {name}");
+    }
     Ok(())
 }
 
-pub fn observe(udid: Option<&str>, mode: ConnectionMode, name: Option<&str>) -> Result<()> {
+pub fn observe(udid: Option<&str>, mode: ConnectionMode, name: Option<&str>, output: OutputMode) -> Result<()> {
     let mut session = open_session(udid, mode)?;
     let mut stream  = session.connect_rsd_shim(SHIM).context("connect notification proxy")?;
 
@@ -29,7 +40,10 @@ pub fn observe(udid: Option<&str>, mode: ConnectionMode, name: Option<&str>) -> 
         None    => send_cmd(&mut stream, "ObserveAllNotifications", None)?,
     }
 
-    eprintln!("listening for notifications (Ctrl-C to stop)…");
+    if !output.is_json() {
+        eprintln!("listening for notifications (Ctrl-C to stop)…");
+    }
+
     loop {
         let msg = match recv_plist(&mut stream) {
             Ok(v)  => v,
@@ -39,7 +53,12 @@ pub fn observe(udid: Option<&str>, mode: ConnectionMode, name: Option<&str>) -> 
             let cmd  = dict.get("Command").and_then(|v| v.as_string()).unwrap_or("");
             let note = dict.get("Name").and_then(|v| v.as_string()).unwrap_or("");
             if cmd == "RelayNotification" {
-                println!("{note}");
+                if output.is_json() {
+                    let event = NotificationEvent { name: note.to_owned() };
+                    println!("{}", serde_json::to_string(&event)?);
+                } else {
+                    println!("{note}");
+                }
                 let _ = std::io::stdout().flush();
             }
         }

@@ -4,8 +4,9 @@ use anyhow::{Context, Result, bail};
 use ios_rs::tunnel::ConnectionMode;
 
 use crate::cmd::open_session;
+use crate::cmd::output::{print_json, ActionResult, OutputMode};
 
-pub fn run(udid: Option<&str>, mode: ConnectionMode, yes: bool) -> Result<()> {
+pub fn run(udid: Option<&str>, mode: ConnectionMode, yes: bool, output: OutputMode) -> Result<()> {
     if !yes {
         eprint!("This will erase ALL data on the device. Type YES to confirm: ");
         io::stderr().flush()?;
@@ -32,6 +33,10 @@ pub fn run(udid: Option<&str>, mode: ConnectionMode, yes: bool) -> Result<()> {
     stream.write_all(&body)?;
     stream.flush()?;
 
-    eprintln!("erase initiated — device will reset to factory defaults");
+    if output.is_json() {
+        print_json(&ActionResult::with_msg("erase initiated"))?;
+    } else {
+        eprintln!("erase initiated — device will reset to factory defaults");
+    }
     Ok(())
 }

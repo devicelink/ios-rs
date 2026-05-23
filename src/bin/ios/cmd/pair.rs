@@ -1,8 +1,15 @@
 use anyhow::{Context, Result};
 
 use crate::cmd::resolve_device;
+use crate::cmd::output::{print_json, ActionResult, OutputMode};
 
-pub fn export(udid: Option<&str>, path: Option<&str>) -> Result<()> {
+#[derive(serde::Serialize)]
+struct ExportResult {
+    ok:   bool,
+    path: String,
+}
+
+pub fn export(udid: Option<&str>, path: Option<&str>, output: OutputMode) -> Result<()> {
     let device = resolve_device(udid)?;
     let mut conn = ios_rs::usbmux::Connection::open()?;
     let raw = conn.read_pair_record(&device.serial)
@@ -11,11 +18,16 @@ pub fn export(udid: Option<&str>, path: Option<&str>) -> Result<()> {
         .unwrap_or_else(|| format!("{}.plist", device.serial));
     std::fs::write(&out_path, &raw)
         .with_context(|| format!("write {out_path}"))?;
+
+    if output.is_json() {
+        return print_json(&ExportResult { ok: true, path: out_path });
+    }
+
     println!("pair record saved to {out_path}");
     Ok(())
 }
 
-pub fn import(udid: Option<&str>, path: &str) -> Result<()> {
+pub fn import(udid: Option<&str>, path: &str, output: OutputMode) -> Result<()> {
     let device = resolve_device(udid)?;
     let raw = std::fs::read(path)
         .with_context(|| format!("read {path}"))?;
@@ -25,6 +37,11 @@ pub fn import(udid: Option<&str>, path: &str) -> Result<()> {
     let mut conn = ios_rs::usbmux::Connection::open()?;
     conn.save_pair_record(&device.serial, raw)
         .context("save pair record to usbmuxd")?;
+
+    if output.is_json() {
+        return print_json(&ActionResult::with_msg(format!("pair record imported from {path}")));
+    }
+
     println!("pair record imported from {path}");
     Ok(())
 }
@@ -33,6 +50,7 @@ pub fn pair(
     udid:             Option<&str>,
     supervision_cert: Option<&str>,
     supervision_key:  Option<&str>,
+    output:           OutputMode,
 ) -> Result<()> {
     let device = resolve_device(udid)?;
 
@@ -45,23 +63,38 @@ pub fn pair(
             ios_rs::lockdown::pairing::pair_supervised(
                 device.device_id, &device.serial, &cert_bytes, &key_bytes,
             ).context("supervised pairing")?;
-            println!("supervised pair complete — pair record saved to usbmuxd");
+
+            if output.is_json() {
+                print_json(&ActionResult::with_msg("supervised pair complete"))?;
+            } else {
+                println!("supervised pair complete — pair record saved to usbmuxd");
+            }
         }
         (None, None) => {
             ios_rs::lockdown::pairing::pair(device.device_id, &device.serial)
                 .context("pairing")?;
-            println!("paired successfully — pair record saved to usbmuxd");
+
+            if output.is_json() {
+                print_json(&ActionResult::with_msg("paired successfully"))?;
+            } else {
+                println!("paired successfully — pair record saved to usbmuxd");
+            }
         }
         _ => anyhow::bail!("--supervision-cert and --supervision-key must both be provided"),
     }
     Ok(())
 }
 
-pub fn unpair(udid: Option<&str>) -> Result<()> {
+pub fn unpair(udid: Option<&str>, output: OutputMode) -> Result<()> {
     let device = resolve_device(udid)?;
     ios_rs::lockdown::pairing::unpair(device.device_id, &device.serial)
         .context("unpair")?;
-    println!("unpaired — pair record deleted");
+
+    if output.is_json() {
+        print_json(&ActionResult::with_msg("unpaired"))?;
+    } else {
+        println!("unpaired — pair record deleted");
+    }
     Ok(())
 }
 

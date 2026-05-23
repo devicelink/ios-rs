@@ -3,10 +3,28 @@ use comfy_table::{presets::UTF8_FULL_CONDENSED, Table};
 use ios_rs::tunnel::ConnectionMode;
 
 use super::open_session;
+use crate::cmd::output::{plist_to_json, print_json, OutputMode};
 
-pub fn run(udid: Option<&str>, mode: ConnectionMode) -> Result<()> {
+pub fn run(udid: Option<&str>, mode: ConnectionMode, output: OutputMode) -> Result<()> {
     let mut session = open_session(udid, mode)?;
     let info = session.lockdown().get_all_values()?;
+
+    if output.is_json() {
+        let udid_str = if info.unique_device_id.is_empty() { &session.device.serial } else { &info.unique_device_id };
+        let mut map = serde_json::Map::new();
+        map.insert("UDID".into(),           serde_json::Value::String(udid_str.clone()));
+        map.insert("Name".into(),           serde_json::Value::String(info.device_name.clone()));
+        map.insert("Product".into(),        serde_json::Value::String(info.product_type.clone()));
+        map.insert("iOSVersion".into(),     serde_json::Value::String(info.product_version.clone()));
+        map.insert("HardwareModel".into(),  serde_json::Value::String(info.hardware_model.clone()));
+        map.insert("SerialNumber".into(),   serde_json::Value::String(info.serial_number.clone()));
+        map.insert("CPUArchitecture".into(),serde_json::Value::String(info.cpu_architecture.clone()));
+        map.insert("Path".into(),           serde_json::Value::String(session.active_path.to_string()));
+        for (k, v) in &info.extra {
+            map.insert(k.clone(), plist_to_json(v));
+        }
+        return print_json(&serde_json::Value::Object(map));
+    }
 
     let udid_str   = if info.unique_device_id.is_empty() { &session.device.serial } else { &info.unique_device_id };
     let serial_str = if info.serial_number.is_empty() { "(requires pairing)" } else { &info.serial_number };

@@ -8,8 +8,16 @@ use ios_rs::tunnel::{ConnectionMode, DeviceSession};
 use plist::Value;
 
 use crate::cmd::open_session;
+use crate::cmd::output::{print_json, OutputMode};
 
-pub fn run(udid: Option<&str>, mode: ConnectionMode, output: &str) -> Result<()> {
+#[derive(serde::Serialize)]
+struct ScreenshotResult {
+    ok:    bool,
+    path:  String,
+    bytes: u64,
+}
+
+pub fn run(udid: Option<&str>, mode: ConnectionMode, output_path: &str, output: OutputMode) -> Result<()> {
     let mut session = open_session(udid, mode)?;
 
     let png = if session.is_rsd() {
@@ -20,12 +28,22 @@ pub fn run(udid: Option<&str>, mode: ConnectionMode, output: &str) -> Result<()>
         client.take().context("take screenshot")?
     };
 
-    if output == "-" {
+    if output_path == "-" {
         std::io::stdout().write_all(&png).context("write PNG to stdout")?;
+        if output.is_json() {
+            // Can't emit JSON if we wrote raw PNG to stdout
+        }
     } else {
-        std::fs::write(output, &png)
-            .with_context(|| format!("write {output}"))?;
-        eprintln!("saved {} bytes → {output}", png.len());
+        std::fs::write(output_path, &png)
+            .with_context(|| format!("write {output_path}"))?;
+        if output.is_json() {
+            return print_json(&ScreenshotResult {
+                ok:    true,
+                path:  output_path.to_string(),
+                bytes: png.len() as u64,
+            });
+        }
+        eprintln!("saved {} bytes → {output_path}", png.len());
     }
     Ok(())
 }
@@ -59,20 +77,9 @@ fn take_modern(session: &mut DeviceSession) -> Result<Vec<u8>> {
 }
 
 fn connect_hub(session: &mut DeviceSession) -> Result<Arc<DtxConn>> {
-    let rsd = session
-        .connect_rsd()
-        .map_err(|e| anyhow::anyhow!("RSD: {e}"))?;
-    let port = rsd
-        .service("com.apple.instruments.dtservicehub")
-        .ok_or_else(|| anyhow::anyhow!("dtservicehub not in RSD catalog"))?
-        .port;
-
-    let tunnel = session
-        .smoltcp_tunnel_ref()
-        .ok_or_else(|| anyhow::anyhow!("no CDTunnel"))?;
-    let stream = tunnel
-        .connect(tunnel.params.server_addr, port)
-        .map_err(|e| anyhow::anyhow!("connect dtservicehub:{port}: {e}"))?;
+    let stream = session
+        .connect_rsd_service("com.apple.instruments.dtservicehub")
+        .map_err(|e| anyhow::anyhow!("dtservicehub: {e}"))?;
     let stream_r = stream
         .try_clone()
         .map_err(|e| anyhow::anyhow!("stream clone: {e}"))?;

@@ -35,15 +35,9 @@ pub fn run(session: &mut DeviceSession, bundle_id: &str, terminate_existing: boo
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 pub fn connect_appservice(session: &mut DeviceSession) -> Result<ios_rs::remotexpc::RemoteXpcConn> {
-    let rsd = session.connect_rsd().map_err(|e| anyhow!("RSD: {e}"))?;
-    let port = rsd
-        .service("com.apple.coredevice.appservice")
-        .ok_or_else(|| anyhow!("coredevice.appservice not in RSD catalog"))?
-        .port;
-
-    let tunnel = session.smoltcp_tunnel_ref().ok_or_else(|| anyhow!("no CDTunnel"))?;
-    let stream = tunnel.connect(tunnel.params.server_addr, port)
-        .map_err(|e| anyhow!("connect appservice: {e}"))?;
+    let stream = session
+        .connect_rsd_service("com.apple.coredevice.appservice")
+        .map_err(|e| anyhow!("coredevice.appservice: {e}"))?;
 
     let listener = TcpListener::bind("127.0.0.1:0")?;
     let relay_addr = listener.local_addr()?;

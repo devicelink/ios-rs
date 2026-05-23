@@ -5,14 +5,15 @@ use ios_rs::lockdown::services::{SyslogClient, SyslogEntry};
 use ios_rs::tunnel::ConnectionMode;
 
 use crate::cmd::open_session;
+use crate::cmd::output::OutputMode;
 
 pub fn run(
-    udid:    Option<&str>,
-    mode:    ConnectionMode,
-    process: Option<&str>,
-    filter:  Option<&str>,
-    json:    bool,
-    output:  Option<&str>,
+    udid:        Option<&str>,
+    mode:        ConnectionMode,
+    process:     Option<&str>,
+    filter:      Option<&str>,
+    output:      OutputMode,
+    output_file: Option<&str>,
 ) -> Result<()> {
     let mut session = open_session(udid, mode)?;
 
@@ -25,9 +26,11 @@ pub fn run(
         SyslogClient::connect(session.lockdown()).context("connect syslog")?
     };
 
+    let json = output.is_json();
+
     let mut file_out;
     let mut stdout_out;
-    let out: &mut dyn Write = if let Some(path) = output {
+    let out: &mut dyn Write = if let Some(path) = output_file {
         file_out = std::io::BufWriter::new(
             std::fs::File::create(path).with_context(|| format!("create {path}"))?
         );

@@ -27,6 +27,7 @@ use anyhow::{Context, Result};
 use ios_rs::tunnel::ConnectionMode;
 
 use crate::cmd::open_session;
+use crate::cmd::output::OutputMode;
 
 const SHIM: &str = "com.apple.os_trace_relay.shim.remote";
 
@@ -34,10 +35,11 @@ pub fn run(
     udid:    Option<&str>,
     process: Option<&str>,
     level:   Option<&str>,
-    json:    bool,
+    output:  OutputMode,
 ) -> Result<()> {
+    let json = output.is_json();
     let mut session = open_session(udid, ConnectionMode::Rsd)?;
-    let mut stream = session.connect_rsd_shim(SHIM).context("connect os_trace shim")?;
+    let mut stream  = session.connect_rsd_shim(SHIM).context("connect os_trace shim")?;
 
     // Send StartActivity request
     {

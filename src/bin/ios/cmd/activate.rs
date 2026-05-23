@@ -5,12 +5,13 @@ use ios_rs::lockdown::services::activation::ActivationClient;
 use ios_rs::tunnel::ConnectionMode;
 
 use crate::cmd::open_session;
+use crate::cmd::output::{print_json, ActionResult, OutputMode};
 
 const DRM_HANDSHAKE_URL: &str = "https://albert.apple.com/deviceservices/drmHandshake";
 const ACTIVATION_URL:    &str = "https://albert.apple.com/deviceservices/deviceActivation";
 const USER_AGENT: &str = "iOS Device Activator (MobileActivation-592.103.2)";
 
-pub fn activate(udid: Option<&str>, mode: ConnectionMode) -> Result<()> {
+pub fn activate(udid: Option<&str>, mode: ConnectionMode, output: OutputMode) -> Result<()> {
     let mut session = open_session(udid, mode)?;
 
     // Quick pre-check via lockdownd — avoid hitting Apple if already activated.
@@ -19,6 +20,9 @@ pub fn activate(udid: Option<&str>, mode: ConnectionMode) -> Result<()> {
         .map(|v| v.into_string().unwrap_or_default())
         .unwrap_or_default();
     if state == "Activated" {
+        if output.is_json() {
+            return print_json(&ActionResult::with_msg("device is already activated"));
+        }
         println!("device is already activated");
         return Ok(());
     }
@@ -94,16 +98,25 @@ pub fn activate(udid: Option<&str>, mode: ConnectionMode) -> Result<()> {
     client.handle_activation_with_session(&activation_response, headers)
         .context("HandleActivationInfoWithSessionRequest")?;
 
-    println!("device activated successfully");
+    if output.is_json() {
+        print_json(&ActionResult::with_msg("device activated successfully"))?;
+    } else {
+        println!("device activated successfully");
+    }
     Ok(())
 }
 
-pub fn deactivate(udid: Option<&str>, mode: ConnectionMode) -> Result<()> {
+pub fn deactivate(udid: Option<&str>, mode: ConnectionMode, output: OutputMode) -> Result<()> {
     let mut session = open_session(udid, mode)?;
     let mut client = ActivationClient::connect(session.lockdown())
         .context("connect activation service")?;
     client.deactivate().context("deactivate")?;
-    println!("device deactivated");
+
+    if output.is_json() {
+        print_json(&ActionResult::with_msg("device deactivated"))?;
+    } else {
+        println!("device deactivated");
+    }
     Ok(())
 }
 
