@@ -1,0 +1,4 @@
+[workspace]
+# Don't create a GitHub release here — release.yml handles that after
+# building the cross-platform binaries.
+git_release_enable = false
