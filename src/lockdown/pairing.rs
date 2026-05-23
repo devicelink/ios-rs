@@ -260,6 +260,7 @@ pub fn unpair(device_id: u32, udid: &str) -> Result<(), Error> {
 
 /// Returns (root_cert_pem, host_cert_pem, device_cert_pem, root_key_pem, host_key_pem)
 /// All as PEM-encoded bytes.
+#[allow(clippy::type_complexity)]
 fn create_pairing_certs(
     device_pub_pem: &[u8],
 ) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>), Error> {
@@ -522,7 +523,7 @@ fn extract_spki_bits(spki: &[u8]) -> Option<&[u8]> {
     Some(&bs_content[1..]) // skip "unused bits" byte
 }
 
-fn peel_tag<'a>(buf: &'a [u8], expected: u8) -> Option<(&'a [u8], &'a [u8])> {
+fn peel_tag(buf: &[u8], expected: u8) -> Option<(&[u8], &[u8])> {
     if buf.first() != Some(&expected) { return None; }
     let (content, rest) = peel_length(&buf[1..])?;
     Some((content, rest))

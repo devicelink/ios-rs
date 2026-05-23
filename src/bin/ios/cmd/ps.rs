@@ -17,7 +17,7 @@ pub fn run(udid: Option<&str>) -> Result<()> {
     }
 
     let name_w = procs.iter().map(|p| p.name.len()).max().unwrap_or(10).clamp(10, 40);
-    println!("{:>6}  {:<name_w$}  {}", "PID", "Name", "Bundle ID / Type", name_w = name_w);
+    println!("{:>6}  {:<name_w$}  Bundle ID / Type", "PID", "Name", name_w = name_w);
     println!("{}", "-".repeat(6 + 2 + name_w + 2 + 20));
     for p in &procs {
         let bundle = if p.real_app_name.is_empty() {
