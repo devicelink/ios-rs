@@ -89,7 +89,7 @@ fn listen_receives_initial_attach_events() {
 #[test]
 fn connect_to_unknown_port_returns_error() {
     let sim  = UsbmuxSim::start(vec![SimDevice::usb("DEV_NO_SERVICES")]);
-    let mut conn = Connection::open_at(sim.addr()).unwrap();
+    let conn = Connection::open_at(sim.addr()).unwrap();
     let err  = conn.open_tunnel(1, 62078);
     assert!(err.is_err(), "expected error connecting to unregistered port");
 }
@@ -97,7 +97,7 @@ fn connect_to_unknown_port_returns_error() {
 #[test]
 fn connect_to_bad_device_returns_error() {
     let sim  = UsbmuxSim::start(vec![SimDevice::usb("SOLO")]);
-    let mut conn = Connection::open_at(sim.addr()).unwrap();
+    let conn = Connection::open_at(sim.addr()).unwrap();
     // device_id=999 doesn't exist
     let err  = conn.open_tunnel(999, 62078);
     assert!(err.is_err());
@@ -116,7 +116,7 @@ fn open_tunnel_and_echo_service() {
         }),
     ]);
 
-    let mut conn = Connection::open_at(sim.addr()).unwrap();
+    let conn = Connection::open_at(sim.addr()).unwrap();
     let mut tunnel = conn.open_tunnel(1, 9999).unwrap();
 
     let sent = b"PING";
@@ -155,7 +155,7 @@ fn open_tunnel_lockdown_style_service() {
         }),
     ]);
 
-    let mut conn = Connection::open_at(sim.addr()).unwrap();
+    let conn = Connection::open_at(sim.addr()).unwrap();
     let mut tunnel = conn.open_tunnel(1, 62078).unwrap();
 
     // Send a fake GetValue request
