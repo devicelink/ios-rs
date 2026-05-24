@@ -4,6 +4,7 @@ mod error;
 #[cfg(unix)]
 mod ios17;
 mod mode;
+#[cfg(unix)]
 pub mod remote_pairing;
 #[cfg(unix)]
 mod smoltcp_stack;

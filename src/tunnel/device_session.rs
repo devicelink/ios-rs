@@ -9,7 +9,9 @@
 /// Legacy               → always usbmux → lockdownd
 /// Rsd                  → Daemon path → fallback direct; error if both fail
 /// ```
-use std::io::{Read, Write};
+use std::io::Read;
+#[cfg(unix)]
+use std::io::Write;
 
 use crate::lockdown::LockdownSession;
 use crate::usbmux::Device;
