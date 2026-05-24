@@ -6,32 +6,33 @@ use super::Error;
 /// credentials established when the user tapped "Trust" on the device.
 #[derive(Debug, Clone)]
 pub struct PairRecord {
-    pub host_id:            String,
-    pub system_buid:        String,
+    pub host_id: String,
+    pub system_buid: String,
     /// PEM-encoded X.509 certificate we present as client cert in TLS
-    pub host_certificate:   Vec<u8>,
+    pub host_certificate: Vec<u8>,
     /// PEM-encoded RSA private key matching host_certificate
-    pub host_private_key:   Vec<u8>,
+    pub host_private_key: Vec<u8>,
     /// PEM-encoded device certificate (server side of TLS)
     pub device_certificate: Vec<u8>,
     /// PEM-encoded root CA that signed both host and device certs
-    pub root_certificate:   Vec<u8>,
+    pub root_certificate: Vec<u8>,
 }
 
 impl PairRecord {
     /// Parse from the raw plist bytes returned by usbmuxd `ReadPairRecord`.
     pub fn from_plist_bytes(data: &[u8]) -> Result<Self, Error> {
-        let val: plist::Value = plist::from_bytes(data)
-            .map_err(|e| Error::PairRecord(format!("plist parse: {e}")))?;
-        let dict = val.as_dictionary()
+        let val: plist::Value =
+            plist::from_bytes(data).map_err(|e| Error::PairRecord(format!("plist parse: {e}")))?;
+        let dict = val
+            .as_dictionary()
             .ok_or_else(|| Error::PairRecord("not a dictionary".into()))?;
 
         let host_id = string(dict, "HostID")?;
         let system_buid = string(dict, "SystemBUID")?;
-        let host_certificate   = data_field(dict, "HostCertificate")?;
-        let host_private_key   = data_field(dict, "HostPrivateKey")?;
+        let host_certificate = data_field(dict, "HostCertificate")?;
+        let host_private_key = data_field(dict, "HostPrivateKey")?;
         let device_certificate = data_field(dict, "DeviceCertificate")?;
-        let root_certificate   = data_field(dict, "RootCertificate")?;
+        let root_certificate = data_field(dict, "RootCertificate")?;
 
         Ok(PairRecord {
             host_id,

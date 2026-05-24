@@ -1,5 +1,5 @@
-use crate::tunnel::error::Error;
 use crate::lockdown::LockdownSession;
+use crate::tunnel::error::Error;
 
 /// Parsed iOS version triple.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -11,7 +11,11 @@ pub struct IosVersion {
 
 impl IosVersion {
     pub fn new(major: u32, minor: u32, patch: u32) -> Self {
-        IosVersion { major, minor, patch }
+        IosVersion {
+            major,
+            minor,
+            patch,
+        }
     }
 
     /// True if this is iOS 17.4 or later (CoreDeviceProxy tunnel path).
@@ -49,9 +53,21 @@ pub fn detect_version(device_id: u32) -> Result<IosVersion, Error> {
 
 pub fn parse_version(s: &str) -> Result<IosVersion, Error> {
     let parts: Vec<&str> = s.split('.').collect();
-    let major = parts.first().and_then(|p| p.parse::<u32>().ok())
+    let major = parts
+        .first()
+        .and_then(|p| p.parse::<u32>().ok())
         .ok_or_else(|| Error::Version(format!("bad version: {s}")))?;
-    let minor = parts.get(1).and_then(|p| p.parse::<u32>().ok()).unwrap_or(0);
-    let patch = parts.get(2).and_then(|p| p.parse::<u32>().ok()).unwrap_or(0);
-    Ok(IosVersion { major, minor, patch })
+    let minor = parts
+        .get(1)
+        .and_then(|p| p.parse::<u32>().ok())
+        .unwrap_or(0);
+    let patch = parts
+        .get(2)
+        .and_then(|p| p.parse::<u32>().ok())
+        .unwrap_or(0);
+    Ok(IosVersion {
+        major,
+        minor,
+        patch,
+    })
 }

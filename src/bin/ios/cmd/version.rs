@@ -6,7 +6,7 @@ use crate::cmd::output::{print_json, OutputMode};
 
 #[derive(serde::Serialize)]
 struct VersionInfo {
-    udid:        String,
+    udid: String,
     ios_version: String,
     rsd_capable: bool,
     active_path: String,
@@ -20,12 +20,18 @@ pub fn run(udid: Option<&str>, output: OutputMode) -> Result<()> {
         let (rsd_capable, active_path) = if ver.is_legacy() {
             (false, "usbmux → lockdownd".to_string())
         } else if ver.supports_core_device_proxy() {
-            (true, "usbmux → lockdownd → CoreDeviceProxy → CDTunnel → RSD".to_string())
+            (
+                true,
+                "usbmux → lockdownd → CoreDeviceProxy → CDTunnel → RSD".to_string(),
+            )
         } else {
-            (true, "USB-Ethernet (CDC-NCM) → RSD → QUIC tunnel".to_string())
+            (
+                true,
+                "USB-Ethernet (CDC-NCM) → RSD → QUIC tunnel".to_string(),
+            )
         };
         let info = VersionInfo {
-            udid:        device.serial.clone(),
+            udid: device.serial.clone(),
             ios_version: ver.to_string(),
             rsd_capable,
             active_path,

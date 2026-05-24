@@ -13,7 +13,9 @@ pub struct WirelessClient {
 
 impl WirelessClient {
     pub fn connect(session: &mut LockdownSession) -> Result<Self, Error> {
-        Ok(WirelessClient { stream: session.connect_service(SERVICE)? })
+        Ok(WirelessClient {
+            stream: session.connect_service(SERVICE)?,
+        })
     }
 
     pub fn get_wifi_enabled(&mut self) -> Result<bool, Error> {
@@ -22,7 +24,8 @@ impl WirelessClient {
         self.send(&Value::Dictionary(req))?;
         let resp = self.recv()?;
         check_error(&resp, "GetWifiConnections")?;
-        Ok(resp.as_dictionary()
+        Ok(resp
+            .as_dictionary()
             .and_then(|d| d.get("EnableWifi"))
             .and_then(|v| v.as_boolean())
             .unwrap_or(false))
@@ -30,7 +33,10 @@ impl WirelessClient {
 
     pub fn set_wifi_enabled(&mut self, enabled: bool) -> Result<(), Error> {
         let mut req = plist::Dictionary::new();
-        req.insert("Request".into(), Value::String("EnableWifiConnections".into()));
+        req.insert(
+            "Request".into(),
+            Value::String("EnableWifiConnections".into()),
+        );
         req.insert("EnableWifi".into(), Value::Boolean(enabled));
         self.send(&Value::Dictionary(req))?;
         let resp = self.recv()?;
@@ -53,7 +59,9 @@ impl WirelessClient {
         read_exact(&mut self.stream, &mut len_buf)?;
         let len = u32::from_be_bytes(len_buf) as usize;
         if len == 0 || len > 1024 * 1024 {
-            return Err(Error::Lockdown(format!("wireless: bad response length {len}")));
+            return Err(Error::Lockdown(format!(
+                "wireless: bad response length {len}"
+            )));
         }
         let mut body = vec![0u8; len];
         read_exact(&mut self.stream, &mut body)?;
@@ -62,7 +70,8 @@ impl WirelessClient {
 }
 
 fn check_error(resp: &Value, op: &str) -> Result<(), Error> {
-    if let Some(err) = resp.as_dictionary()
+    if let Some(err) = resp
+        .as_dictionary()
         .and_then(|d| d.get("Error"))
         .and_then(|v| v.as_string())
     {
@@ -75,7 +84,9 @@ fn read_exact(s: &mut MuxSocket, buf: &mut [u8]) -> Result<(), Error> {
     let mut done = 0;
     while done < buf.len() {
         let n = s.read(&mut buf[done..])?;
-        if n == 0 { return Err(Error::Closed); }
+        if n == 0 {
+            return Err(Error::Closed);
+        }
         done += n;
     }
     Ok(())

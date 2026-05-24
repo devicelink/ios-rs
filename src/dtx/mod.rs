@@ -43,11 +43,16 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("I/O: {0}")]   Io(#[from] std::io::Error),
-    #[error("plist: {0}")] Plist(#[from] plist::Error),
-    #[error("bad DTX magic: {0:#010x}")] BadMagic(u32),
-    #[error("protocol: {0}")] Protocol(String),
-    #[error("DTX connection closed")] Closed,
+    #[error("I/O: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("plist: {0}")]
+    Plist(#[from] plist::Error),
+    #[error("bad DTX magic: {0:#010x}")]
+    BadMagic(u32),
+    #[error("protocol: {0}")]
+    Protocol(String),
+    #[error("DTX connection closed")]
+    Closed,
 }
 
 // ── message types ─────────────────────────────────────────────────────────────
@@ -55,11 +60,11 @@ pub enum Error {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 pub enum MsgType {
-    Ack             = 0,
-    Unknown1        = 1,
-    MethodInvoke    = 2,
-    Reply           = 3,
-    Error           = 4,
+    Ack = 0,
+    Unknown1 = 1,
+    MethodInvoke = 2,
+    Reply = 3,
+    Error = 4,
 }
 
 impl TryFrom<u32> for MsgType {
@@ -80,7 +85,7 @@ impl TryFrom<u32> for MsgType {
 
 #[derive(Debug, Clone)]
 pub struct DtxMessage {
-    pub msg_id:  u32,
+    pub msg_id: u32,
     pub conv_id: u32,
     pub channel: i32,
     pub expects_reply: bool,
@@ -99,15 +104,15 @@ pub enum AuxValue {
 // ── encoding ──────────────────────────────────────────────────────────────────
 
 const MAGIC: [u8; 4] = [0x79, 0x5B, 0x3D, 0x1F];
-const T_NULL:     u32 = 0x0A;
-const T_UINT32:   u32 = 0x03;
-const T_INT64:    u32 = 0x06;
-const T_BYTEARRAY:u32 = 0x02;
-const AUX_MAGIC:  u32 = 0x1F0;
+const T_NULL: u32 = 0x0A;
+const T_UINT32: u32 = 0x03;
+const T_INT64: u32 = 0x06;
+const T_BYTEARRAY: u32 = 0x02;
+const AUX_MAGIC: u32 = 0x1F0;
 
 /// Encode a DTX method-invocation message.
 pub fn encode_call(
-    msg_id:  u32,
+    msg_id: u32,
     conv_id: u32,
     channel: i32,
     expects_reply: bool,
@@ -115,7 +120,15 @@ pub fn encode_call(
     aux: &[AuxValue],
 ) -> Vec<u8> {
     let payload = archive_string(selector);
-    encode_raw(msg_id, conv_id, channel, expects_reply, MsgType::MethodInvoke, aux, &payload)
+    encode_raw(
+        msg_id,
+        conv_id,
+        channel,
+        expects_reply,
+        MsgType::MethodInvoke,
+        aux,
+        &payload,
+    )
 }
 
 /// Encode an ACK reply to an incoming message.
@@ -125,14 +138,14 @@ pub fn encode_ack(msg: &DtxMessage) -> Vec<u8> {
     // Header (32 bytes) — magic big-endian, rest little-endian
     buf[0..4].copy_from_slice(&MAGIC);
     buf[4..8].copy_from_slice(&32u32.to_le_bytes());
-    buf[8..10].copy_from_slice(&0u16.to_le_bytes());   // fragment_index
-    buf[10..12].copy_from_slice(&1u16.to_le_bytes());  // fragment_count
+    buf[8..10].copy_from_slice(&0u16.to_le_bytes()); // fragment_index
+    buf[10..12].copy_from_slice(&1u16.to_le_bytes()); // fragment_count
     buf[12..16].copy_from_slice(&16u32.to_le_bytes()); // message_length = 16 (payload header only)
     buf[16..20].copy_from_slice(&msg.msg_id.to_le_bytes());
     buf[20..24].copy_from_slice(&(msg.conv_id + 1).to_le_bytes());
     buf[24..28].copy_from_slice(&(msg.channel as u32).to_le_bytes());
     buf[28..32].copy_from_slice(&0u32.to_le_bytes()); // expects_reply = false
-    // Payload header (16 bytes) — message_type=Ack, everything else 0
+                                                      // Payload header (16 bytes) — message_type=Ack, everything else 0
     buf[32..36].copy_from_slice(&(MsgType::Ack as u32).to_le_bytes());
     // bytes 36..48 stay zero
     buf
@@ -155,11 +168,19 @@ fn encode_ack_raw(msg_id: u32, conv_id: u32, channel: i32) -> Vec<u8> {
 
 /// Encode a reply with a plist payload.
 pub fn encode_reply(req: &DtxMessage, payload_bytes: &[u8]) -> Vec<u8> {
-    encode_raw(req.msg_id, req.conv_id + 1, req.channel, false, MsgType::Reply, &[], payload_bytes)
+    encode_raw(
+        req.msg_id,
+        req.conv_id + 1,
+        req.channel,
+        false,
+        MsgType::Reply,
+        &[],
+        payload_bytes,
+    )
 }
 
 fn encode_raw(
-    msg_id:  u32,
+    msg_id: u32,
     conv_id: u32,
     channel: i32,
     expects_reply: bool,
@@ -169,22 +190,32 @@ fn encode_raw(
 ) -> Vec<u8> {
     let aux_entries = encode_aux_entries(aux);
     let aux_entry_len = aux_entries.len();
-    let aux_len_with_hdr = if aux_entry_len > 0 { aux_entry_len + 16 } else { 0 };
-    let total_payload   = aux_len_with_hdr + payload.len();
-    let message_len     = if total_payload > 0 { 16 + total_payload } else { 0 };
+    let aux_len_with_hdr = if aux_entry_len > 0 {
+        aux_entry_len + 16
+    } else {
+        0
+    };
+    let total_payload = aux_len_with_hdr + payload.len();
+    let message_len = if total_payload > 0 {
+        16 + total_payload
+    } else {
+        0
+    };
 
     let mut buf = Vec::with_capacity(32 + message_len);
     buf.extend_from_slice(&MAGIC);
     buf.extend_from_slice(&32u32.to_le_bytes());
-    buf.extend_from_slice(&0u16.to_le_bytes());  // fragment_index
-    buf.extend_from_slice(&1u16.to_le_bytes());  // fragment_count
+    buf.extend_from_slice(&0u16.to_le_bytes()); // fragment_index
+    buf.extend_from_slice(&1u16.to_le_bytes()); // fragment_count
     buf.extend_from_slice(&(message_len as u32).to_le_bytes());
     buf.extend_from_slice(&msg_id.to_le_bytes());
     buf.extend_from_slice(&conv_id.to_le_bytes());
     buf.extend_from_slice(&(channel as u32).to_le_bytes());
     buf.extend_from_slice(&(expects_reply as u32).to_le_bytes());
 
-    if message_len == 0 { return buf; }
+    if message_len == 0 {
+        return buf;
+    }
 
     // Payload header
     buf.extend_from_slice(&(msg_type as u32).to_le_bytes());
@@ -234,13 +265,16 @@ pub fn archive_primitive(v: plist::Value) -> Vec<u8> {
     let mut top = plist::Dictionary::new();
     top.insert("root".into(), plist::Value::Uid(plist::Uid::new(1)));
     let mut d = plist::Dictionary::new();
-    d.insert("$version".into(),  plist::Value::Integer(100000.into()));
-    d.insert("$archiver".into(), plist::Value::String("NSKeyedArchiver".into()));
-    d.insert("$top".into(),      plist::Value::Dictionary(top));
-    d.insert("$objects".into(),  plist::Value::Array(vec![
-        plist::Value::String("$null".into()),
-        v,
-    ]));
+    d.insert("$version".into(), plist::Value::Integer(100000.into()));
+    d.insert(
+        "$archiver".into(),
+        plist::Value::String("NSKeyedArchiver".into()),
+    );
+    d.insert("$top".into(), plist::Value::Dictionary(top));
+    d.insert(
+        "$objects".into(),
+        plist::Value::Array(vec![plist::Value::String("$null".into()), v]),
+    );
     let mut buf = Vec::new();
     plist::to_writer_binary(&mut buf, &plist::Value::Dictionary(d)).unwrap();
     buf
@@ -266,18 +300,28 @@ pub fn archive_capabilities_dict() -> Vec<u8> {
     let class_uid = plist::Uid::new(objects.len() as u64);
     objects.push(plist::Value::Dictionary({
         let mut d = plist::Dictionary::new();
-        d.insert("$classname".into(), plist::Value::String("NSDictionary".into()));
-        d.insert("$classes".into(), plist::Value::Array(vec![
+        d.insert(
+            "$classname".into(),
             plist::Value::String("NSDictionary".into()),
-            plist::Value::String("NSObject".into()),
-        ]));
+        );
+        d.insert(
+            "$classes".into(),
+            plist::Value::Array(vec![
+                plist::Value::String("NSDictionary".into()),
+                plist::Value::String("NSObject".into()),
+            ]),
+        );
         d
     }));
 
     let k1_uid = plist::Uid::new(objects.len() as u64);
-    objects.push(plist::Value::String("com.apple.private.DTXBlockCompression".into()));
+    objects.push(plist::Value::String(
+        "com.apple.private.DTXBlockCompression".into(),
+    ));
     let k2_uid = plist::Uid::new(objects.len() as u64);
-    objects.push(plist::Value::String("com.apple.private.DTXConnection".into()));
+    objects.push(plist::Value::String(
+        "com.apple.private.DTXConnection".into(),
+    ));
     let v1_uid = plist::Uid::new(objects.len() as u64);
     objects.push(plist::Value::Integer(0.into()));
     let v2_uid = plist::Uid::new(objects.len() as u64);
@@ -286,12 +330,14 @@ pub fn archive_capabilities_dict() -> Vec<u8> {
     let dict_uid = plist::Uid::new(objects.len() as u64);
     objects.push(plist::Value::Dictionary({
         let mut d = plist::Dictionary::new();
-        d.insert("NS.keys".into(), plist::Value::Array(vec![
-            plist::Value::Uid(k1_uid), plist::Value::Uid(k2_uid),
-        ]));
-        d.insert("NS.objects".into(), plist::Value::Array(vec![
-            plist::Value::Uid(v1_uid), plist::Value::Uid(v2_uid),
-        ]));
+        d.insert(
+            "NS.keys".into(),
+            plist::Value::Array(vec![plist::Value::Uid(k1_uid), plist::Value::Uid(k2_uid)]),
+        );
+        d.insert(
+            "NS.objects".into(),
+            plist::Value::Array(vec![plist::Value::Uid(v1_uid), plist::Value::Uid(v2_uid)]),
+        );
         d.insert("$class".into(), plist::Value::Uid(class_uid));
         d
     }));
@@ -299,10 +345,13 @@ pub fn archive_capabilities_dict() -> Vec<u8> {
     let mut top = plist::Dictionary::new();
     top.insert("root".into(), plist::Value::Uid(dict_uid));
     let mut root = plist::Dictionary::new();
-    root.insert("$version".into(),  plist::Value::Integer(100000.into()));
-    root.insert("$archiver".into(), plist::Value::String("NSKeyedArchiver".into()));
-    root.insert("$top".into(),      plist::Value::Dictionary(top));
-    root.insert("$objects".into(),  plist::Value::Array(objects));
+    root.insert("$version".into(), plist::Value::Integer(100000.into()));
+    root.insert(
+        "$archiver".into(),
+        plist::Value::String("NSKeyedArchiver".into()),
+    );
+    root.insert("$top".into(), plist::Value::Dictionary(top));
+    root.insert("$objects".into(), plist::Value::Array(objects));
     let mut buf = Vec::new();
     plist::to_writer_binary(&mut buf, &plist::Value::Dictionary(root)).unwrap();
     buf
@@ -314,7 +363,12 @@ fn read_exact<R: Read>(r: &mut R, buf: &mut [u8]) -> std::io::Result<()> {
     let mut done = 0;
     while done < buf.len() {
         let n = r.read(&mut buf[done..])?;
-        if n == 0 { return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "dtx eof")); }
+        if n == 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "dtx eof",
+            ));
+        }
         done += n;
     }
     Ok(())
@@ -335,18 +389,28 @@ fn read_message_inner<R: Read>(
 
     // Magic is big-endian
     let magic = u32::from_be_bytes(hdr[0..4].try_into().unwrap());
-    if magic != 0x795B3D1F { return Err(Error::BadMagic(magic)); }
+    if magic != 0x795B3D1F {
+        return Err(Error::BadMagic(magic));
+    }
 
     let fragment_index = u16::from_le_bytes(hdr[8..10].try_into().unwrap());
     let fragment_count = u16::from_le_bytes(hdr[10..12].try_into().unwrap());
-    let msg_len        = u32::from_le_bytes(hdr[12..16].try_into().unwrap()) as usize;
-    let msg_id         = u32::from_le_bytes(hdr[16..20].try_into().unwrap());
-    let conv_id        = u32::from_le_bytes(hdr[20..24].try_into().unwrap());
-    let channel        = i32::from_le_bytes(hdr[24..28].try_into().unwrap());
-    let expects        = u32::from_le_bytes(hdr[28..32].try_into().unwrap()) != 0;
+    let msg_len = u32::from_le_bytes(hdr[12..16].try_into().unwrap()) as usize;
+    let msg_id = u32::from_le_bytes(hdr[16..20].try_into().unwrap());
+    let conv_id = u32::from_le_bytes(hdr[20..24].try_into().unwrap());
+    let channel = i32::from_le_bytes(hdr[24..28].try_into().unwrap());
+    let expects = u32::from_le_bytes(hdr[28..32].try_into().unwrap()) != 0;
 
     if msg_len == 0 {
-        return Ok(DtxMessage { msg_id, conv_id, channel, expects_reply: expects, msg_type: 0, aux: vec![], payload: None });
+        return Ok(DtxMessage {
+            msg_id,
+            conv_id,
+            channel,
+            expects_reply: expects,
+            msg_type: 0,
+            aux: vec![],
+            payload: None,
+        });
     }
 
     // DTX fragmentation protocol (go-ios fragmentdecoder.go):
@@ -358,11 +422,11 @@ fn read_message_inner<R: Read>(
         for _fi in 1..fragment_count {
             let mut fhdr = [0u8; 32];
             read_exact(r, &mut fhdr)?;
-            let flen     = u32::from_le_bytes(fhdr[12..16].try_into().unwrap()) as usize;
-            let fid      = u32::from_le_bytes(fhdr[16..20].try_into().unwrap());
-            let fconv    = u32::from_le_bytes(fhdr[20..24].try_into().unwrap());
+            let flen = u32::from_le_bytes(fhdr[12..16].try_into().unwrap()) as usize;
+            let fid = u32::from_le_bytes(fhdr[16..20].try_into().unwrap());
+            let fconv = u32::from_le_bytes(fhdr[20..24].try_into().unwrap());
             let fchannel = i32::from_le_bytes(fhdr[24..28].try_into().unwrap());
-            let fexp     = u32::from_le_bytes(fhdr[28..32].try_into().unwrap()) != 0;
+            let fexp = u32::from_le_bytes(fhdr[28..32].try_into().unwrap()) != 0;
             if fexp {
                 if let Some(ref w) = writer {
                     let ack = encode_ack_raw(fid, fconv + 1, fchannel);
@@ -385,9 +449,9 @@ fn read_message_inner<R: Read>(
         payload
     };
 
-    let msg_type  = u32::from_le_bytes(payload[0..4].try_into().unwrap());
-    let aux_len   = u32::from_le_bytes(payload[4..8].try_into().unwrap()) as usize;
-    let total     = u32::from_le_bytes(payload[8..12].try_into().unwrap()) as usize;
+    let msg_type = u32::from_le_bytes(payload[0..4].try_into().unwrap());
+    let aux_len = u32::from_le_bytes(payload[4..8].try_into().unwrap()) as usize;
+    let total = u32::from_le_bytes(payload[8..12].try_into().unwrap()) as usize;
     // payload[12..16] = flags (ignored)
 
     let aux = if aux_len > 0 {
@@ -404,7 +468,7 @@ fn read_message_inner<R: Read>(
     };
 
     let body_start = 16 + aux_len;
-    let body_len   = total.saturating_sub(aux_len);
+    let body_len = total.saturating_sub(aux_len);
     let body = if body_len > 0 && payload.len() >= body_start + body_len {
         let b = &payload[body_start..body_start + body_len];
         Some(plist::from_bytes::<plist::Value>(b)?)
@@ -412,37 +476,51 @@ fn read_message_inner<R: Read>(
         None
     };
 
-    Ok(DtxMessage { msg_id, conv_id, channel, expects_reply: expects, msg_type, aux, payload: body })
+    Ok(DtxMessage {
+        msg_id,
+        conv_id,
+        channel,
+        expects_reply: expects,
+        msg_type,
+        aux,
+        payload: body,
+    })
 }
 
 fn decode_aux_entries(data: &[u8]) -> Vec<AuxValue> {
     let mut out = Vec::new();
     let mut pos = 0;
     while pos + 4 <= data.len() {
-        let key_type = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap());
+        let key_type = u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap());
         pos += 4;
-        if key_type != T_NULL { break; } // unexpected
-        if pos + 4 > data.len() { break; }
-        let val_type = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap());
+        if key_type != T_NULL {
+            break;
+        } // unexpected
+        if pos + 4 > data.len() {
+            break;
+        }
+        let val_type = u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap());
         pos += 4;
         match val_type {
             T_UINT32 if pos + 4 <= data.len() => {
-                let v = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap());
+                let v = u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap());
                 out.push(AuxValue::Int32(v as i32));
                 pos += 4;
             }
             T_INT64 if pos + 8 <= data.len() => {
-                let v = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap());
+                let v = u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap());
                 out.push(AuxValue::Int64(v as i64));
                 pos += 8;
             }
             T_BYTEARRAY if pos + 4 <= data.len() => {
-                let len = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap()) as usize;
+                let len = u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap()) as usize;
                 pos += 4;
                 if pos + len <= data.len() {
-                    out.push(AuxValue::Bytes(data[pos..pos+len].to_vec()));
+                    out.push(AuxValue::Bytes(data[pos..pos + len].to_vec()));
                     pos += len;
-                } else { break; }
+                } else {
+                    break;
+                }
             }
             _ => break,
         }
@@ -452,7 +530,7 @@ fn decode_aux_entries(data: &[u8]) -> Vec<AuxValue> {
 
 // ── blocking connection ───────────────────────────────────────────────────────
 
-type WaiterMap  = Arc<Mutex<HashMap<u32, mpsc::SyncSender<DtxMessage>>>>;
+type WaiterMap = Arc<Mutex<HashMap<u32, mpsc::SyncSender<DtxMessage>>>>;
 type DispatchMap = Arc<Mutex<HashMap<i32, mpsc::SyncSender<DtxMessage>>>>;
 
 /// A blocking DTX connection.
@@ -461,13 +539,13 @@ type DispatchMap = Arc<Mutex<HashMap<i32, mpsc::SyncSender<DtxMessage>>>>;
 /// - replies (conv_id > 0) → forwarded to the matching `call()` waiter
 /// - incoming method invocations → forwarded to the channel's dispatch queue
 pub struct DtxConn {
-    writer:       Arc<Mutex<BufWriter<Box<dyn Write + Send>>>>,
-    next_id:      Arc<Mutex<u32>>,
-    next_chan:    Arc<Mutex<i32>>,
-    waiters:      WaiterMap,
-    dispatchers:  DispatchMap,
-    _reader:      thread::JoinHandle<()>,
-    timeout:      Duration,
+    writer: Arc<Mutex<BufWriter<Box<dyn Write + Send>>>>,
+    next_id: Arc<Mutex<u32>>,
+    next_chan: Arc<Mutex<i32>>,
+    waiters: WaiterMap,
+    dispatchers: DispatchMap,
+    _reader: thread::JoinHandle<()>,
+    timeout: Duration,
 }
 
 impl DtxConn {
@@ -476,9 +554,11 @@ impl DtxConn {
         R: Read + Send + 'static,
         W: Write + Send + 'static,
     {
-        let waiters:     WaiterMap   = Arc::new(Mutex::new(HashMap::new()));
+        let waiters: WaiterMap = Arc::new(Mutex::new(HashMap::new()));
         let dispatchers: DispatchMap = Arc::new(Mutex::new(HashMap::new()));
-        let w = Arc::new(Mutex::new(BufWriter::new(Box::new(writer) as Box<dyn Write + Send>)));
+        let w = Arc::new(Mutex::new(BufWriter::new(
+            Box::new(writer) as Box<dyn Write + Send>
+        )));
 
         let w2 = Arc::clone(&w);
         let wt = Arc::clone(&waiters);
@@ -488,7 +568,15 @@ impl DtxConn {
             .spawn(move || reader_loop(reader, w2, wt, dt))
             .expect("dtx reader thread");
 
-        DtxConn { writer: w, next_id: Arc::new(Mutex::new(5)), next_chan: Arc::new(Mutex::new(1)), waiters, dispatchers, _reader: handle, timeout: Duration::from_secs(10) }
+        DtxConn {
+            writer: w,
+            next_id: Arc::new(Mutex::new(5)),
+            next_chan: Arc::new(Mutex::new(1)),
+            waiters,
+            dispatchers,
+            _reader: handle,
+            timeout: Duration::from_secs(10),
+        }
     }
 
     /// Send a method call and wait for the reply. Returns the reply's payload.
@@ -498,7 +586,7 @@ impl DtxConn {
         selector: &str,
         aux: &[AuxValue],
     ) -> Result<Option<plist::Value>, Error> {
-        let id   = self.alloc_id();
+        let id = self.alloc_id();
         let (tx, rx) = mpsc::sync_channel(1);
         self.waiters.lock().unwrap().insert(id, tx);
 
@@ -507,7 +595,9 @@ impl DtxConn {
 
         rx.recv_timeout(self.timeout)
             .map_err(|e| match e {
-                mpsc::RecvTimeoutError::Timeout      => Error::Protocol(format!("DTX call '{selector}' timed out")),
+                mpsc::RecvTimeoutError::Timeout => {
+                    Error::Protocol(format!("DTX call '{selector}' timed out"))
+                }
                 mpsc::RecvTimeoutError::Disconnected => Error::Closed,
             })
             .map(|m| m.payload)
@@ -537,7 +627,7 @@ impl DtxConn {
 
     /// Send a method call without waiting for a reply.
     pub fn call_async(&self, channel: i32, selector: &str, aux: &[AuxValue]) -> Result<(), Error> {
-        let id    = self.alloc_id();
+        let id = self.alloc_id();
         let frame = encode_call(id, 0, channel, false, selector, aux);
         self.write_bytes(&frame)
     }
@@ -549,7 +639,11 @@ impl DtxConn {
     /// minimal capabilities dict observed in both pymd3 and go-ios.
     pub fn handshake(&self) -> Result<(), Error> {
         let caps = archive_capabilities_dict();
-        self.call_async(0, "_notifyOfPublishedCapabilities:", &[AuxValue::Bytes(caps)])
+        self.call_async(
+            0,
+            "_notifyOfPublishedCapabilities:",
+            &[AuxValue::Bytes(caps)],
+        )
     }
 
     /// Request a named DTX channel. Returns the channel code to use in subsequent calls.
@@ -609,14 +703,14 @@ impl DtxConn {
 }
 
 fn reader_loop<R: Read>(
-    mut reader:     R,
-    writer:         Arc<Mutex<BufWriter<Box<dyn Write + Send>>>>,
-    waiters:        WaiterMap,
-    dispatchers:    DispatchMap,
+    mut reader: R,
+    writer: Arc<Mutex<BufWriter<Box<dyn Write + Send>>>>,
+    waiters: WaiterMap,
+    dispatchers: DispatchMap,
 ) {
     loop {
         let msg = match read_message_inner(&mut reader, Some(Arc::clone(&writer))) {
-            Ok(m)  => m,
+            Ok(m) => m,
             Err(_) => return,
         };
 
@@ -631,7 +725,9 @@ fn reader_loop<R: Read>(
         }
 
         // Unsolicited ACK (type=0, conv_id=0) — drop
-        if msg.msg_type == MsgType::Ack as u32 { continue; }
+        if msg.msg_type == MsgType::Ack as u32 {
+            continue;
+        }
 
         // Incoming method invocation or other — dispatch to channel handler.
         // If there's a registered handler, let it decide the reply (it may need to

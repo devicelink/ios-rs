@@ -1,9 +1,9 @@
 mod error;
 mod pair_record;
 pub mod pairing;
+pub mod services;
 mod session;
 mod types;
-pub mod services;
 
 pub use error::Error;
 pub use pair_record::PairRecord;

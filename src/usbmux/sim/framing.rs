@@ -14,7 +14,10 @@ fn read_exact(s: &mut TcpStream, buf: &mut [u8]) -> io::Result<()> {
     while filled < buf.len() {
         let n = s.read(&mut buf[filled..])?;
         if n == 0 {
-            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "sim: client closed"));
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "sim: client closed",
+            ));
         }
         filled += n;
     }
@@ -27,7 +30,7 @@ pub fn read_frame(s: &mut TcpStream) -> io::Result<(u32, Vec<u8>)> {
     read_exact(s, &mut hdr)?;
 
     let total = u32::from_le_bytes(hdr[0..4].try_into().unwrap()) as usize;
-    let tag   = u32::from_le_bytes(hdr[12..16].try_into().unwrap());
+    let tag = u32::from_le_bytes(hdr[12..16].try_into().unwrap());
 
     let payload_len = total.saturating_sub(HEADER_LEN);
     let mut payload = vec![0u8; payload_len];
@@ -61,9 +64,9 @@ pub fn message_type(plist: &[u8]) -> Option<String> {
 pub fn parse_connect(plist: &[u8]) -> Option<(u32, u16)> {
     let val: plist::Value = plist::from_bytes(plist).ok()?;
     let dict = val.as_dictionary()?;
-    let device_id  = dict.get("DeviceID")?.as_unsigned_integer()? as u32;
-    let port_be    = dict.get("PortNumber")?.as_unsigned_integer()? as u16;
-    let port       = u16::from_be(port_be); // wire uses network (big-endian) byte order
+    let device_id = dict.get("DeviceID")?.as_unsigned_integer()? as u32;
+    let port_be = dict.get("PortNumber")?.as_unsigned_integer()? as u16;
+    let port = u16::from_be(port_be); // wire uses network (big-endian) byte order
     Some((device_id, port))
 }
 
@@ -86,17 +89,34 @@ pub fn device_list_plist(device_entries: &[plist::Value]) -> Vec<u8> {
 }
 
 /// Build an `Attached` event plist for a single device.
-pub fn attached_plist(device_id: u32, serial: &str, connection_type: &str, product_id: u16) -> Vec<u8> {
+pub fn attached_plist(
+    device_id: u32,
+    serial: &str,
+    connection_type: &str,
+    product_id: u16,
+) -> Vec<u8> {
     let mut props = plist::Dictionary::new();
-    props.insert("SerialNumber".into(),   plist::Value::String(serial.into()));
-    props.insert("ConnectionType".into(), plist::Value::String(connection_type.into()));
-    props.insert("ProductID".into(),      plist::Value::Integer((product_id as i64).into()));
-    props.insert("LocationID".into(),     plist::Value::Integer(0.into()));
+    props.insert("SerialNumber".into(), plist::Value::String(serial.into()));
+    props.insert(
+        "ConnectionType".into(),
+        plist::Value::String(connection_type.into()),
+    );
+    props.insert(
+        "ProductID".into(),
+        plist::Value::Integer((product_id as i64).into()),
+    );
+    props.insert("LocationID".into(), plist::Value::Integer(0.into()));
 
     let mut d = plist::Dictionary::new();
-    d.insert("DeviceID".into(),    plist::Value::Integer((device_id as i64).into()));
-    d.insert("MessageType".into(), plist::Value::String("Attached".into()));
-    d.insert("Properties".into(),  plist::Value::Dictionary(props));
+    d.insert(
+        "DeviceID".into(),
+        plist::Value::Integer((device_id as i64).into()),
+    );
+    d.insert(
+        "MessageType".into(),
+        plist::Value::String("Attached".into()),
+    );
+    d.insert("Properties".into(), plist::Value::Dictionary(props));
     encode_plist(&plist::Value::Dictionary(d))
 }
 
@@ -104,8 +124,14 @@ pub fn attached_plist(device_id: u32, serial: &str, connection_type: &str, produ
 #[allow(dead_code)]
 pub fn detached_plist(device_id: u32) -> Vec<u8> {
     let mut d = plist::Dictionary::new();
-    d.insert("DeviceID".into(),    plist::Value::Integer((device_id as i64).into()));
-    d.insert("MessageType".into(), plist::Value::String("Detached".into()));
+    d.insert(
+        "DeviceID".into(),
+        plist::Value::Integer((device_id as i64).into()),
+    );
+    d.insert(
+        "MessageType".into(),
+        plist::Value::String("Detached".into()),
+    );
     encode_plist(&plist::Value::Dictionary(d))
 }
 

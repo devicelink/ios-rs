@@ -8,23 +8,29 @@ use super::types::{Device, Event, ResultCode};
 
 pub struct Connection {
     socket: MuxSocket,
-    codec:  Codec,
+    codec: Codec,
 }
 
 impl Connection {
     pub fn open() -> Result<Self, Error> {
-        Ok(Connection { socket: MuxSocket::connect()?, codec: Codec::new() })
+        Ok(Connection {
+            socket: MuxSocket::connect()?,
+            codec: Codec::new(),
+        })
     }
 
     pub fn open_at(addr: std::net::SocketAddr) -> Result<Self, Error> {
         Ok(Connection {
             socket: MuxSocket::Tcp(TcpStream::connect(addr)?),
-            codec:  Codec::new(),
+            codec: Codec::new(),
         })
     }
 
     pub fn from_stream(stream: MuxSocket) -> Self {
-        Connection { socket: stream, codec: Codec::new() }
+        Connection {
+            socket: stream,
+            codec: Codec::new(),
+        }
     }
 
     pub fn list_devices(&mut self) -> Result<Vec<Device>, Error> {
@@ -32,7 +38,7 @@ impl Connection {
         self.flush()?;
         loop {
             match self.next_event()? {
-                Event::DeviceList(devs)             => return Ok(devs),
+                Event::DeviceList(devs) => return Ok(devs),
                 Event::RequestFailed { tag: t, .. } if t == tag => {
                     return Err(Error::RequestFailed(ResultCode::BadDevice))
                 }
@@ -104,10 +110,14 @@ impl Connection {
 
     pub(crate) fn next_event(&mut self) -> Result<Event, Error> {
         loop {
-            if let Some(ev) = self.codec.poll_event() { return Ok(ev); }
+            if let Some(ev) = self.codec.poll_event() {
+                return Ok(ev);
+            }
             let mut buf = [0u8; 4096];
             let n = self.socket.read(&mut buf)?;
-            if n == 0 { return Err(Error::ConnectionClosed); }
+            if n == 0 {
+                return Err(Error::ConnectionClosed);
+            }
             self.codec.push_data(&buf[..n]);
         }
     }
@@ -137,4 +147,3 @@ impl Listener {
         }
     }
 }
-

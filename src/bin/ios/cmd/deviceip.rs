@@ -6,27 +6,43 @@ use crate::cmd::output::{print_json, OutputMode};
 
 #[derive(serde::Serialize)]
 struct DeviceIpInfo {
-    cdtunnel_ipv6:  Option<String>,
-    wifi_mac:       Option<String>,
-    bluetooth_mac:  Option<String>,
-    ethernet_mac:   Option<String>,
+    cdtunnel_ipv6: Option<String>,
+    wifi_mac: Option<String>,
+    bluetooth_mac: Option<String>,
+    ethernet_mac: Option<String>,
 }
 
 pub fn run(udid: Option<&str>, output: OutputMode) -> Result<()> {
     let mut session = open_session(udid, ConnectionMode::Rsd)?;
 
     // CDTunnel address (device side of the IPv6 tunnel our tooling uses)
-    let cdtunnel_ipv6 = session.smoltcp_tunnel_ref()
+    let cdtunnel_ipv6 = session
+        .smoltcp_tunnel_ref()
         .map(|t| t.params.server_addr.to_string());
 
     // Lockdownd network addresses
     let ld = session.lockdown();
-    let wifi_mac = ld.get_value(None, "WiFiAddress").ok()
-        .and_then(|v| if let plist::Value::String(s) = v { Some(s) } else { None });
-    let bluetooth_mac = ld.get_value(None, "BluetoothAddress").ok()
-        .and_then(|v| if let plist::Value::String(s) = v { Some(s) } else { None });
-    let ethernet_mac = ld.get_value(None, "EthernetAddress").ok()
-        .and_then(|v| if let plist::Value::String(s) = v { Some(s) } else { None });
+    let wifi_mac = ld.get_value(None, "WiFiAddress").ok().and_then(|v| {
+        if let plist::Value::String(s) = v {
+            Some(s)
+        } else {
+            None
+        }
+    });
+    let bluetooth_mac = ld.get_value(None, "BluetoothAddress").ok().and_then(|v| {
+        if let plist::Value::String(s) = v {
+            Some(s)
+        } else {
+            None
+        }
+    });
+    let ethernet_mac = ld.get_value(None, "EthernetAddress").ok().and_then(|v| {
+        if let plist::Value::String(s) = v {
+            Some(s)
+        } else {
+            None
+        }
+    });
 
     if output.is_json() {
         let info = DeviceIpInfo {
@@ -51,6 +67,8 @@ pub fn run(udid: Option<&str>, output: OutputMode) -> Result<()> {
         }
     }
 
-    eprintln!("\nFor the device's LAN IP: check your router ARP table or run `arp -a` on the host.");
+    eprintln!(
+        "\nFor the device's LAN IP: check your router ARP table or run `arp -a` on the host."
+    );
     Ok(())
 }

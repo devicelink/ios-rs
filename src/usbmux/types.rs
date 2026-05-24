@@ -29,11 +29,11 @@ impl From<&str> for ConnectionType {
 
 #[derive(Debug, Clone)]
 pub struct Device {
-    pub device_id:       u32,
-    pub serial:          String,
+    pub device_id: u32,
+    pub serial: String,
     pub connection_type: ConnectionType,
-    pub product_id:      u16,
-    pub location_id:     u32,
+    pub product_id: u16,
+    pub location_id: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,13 +50,13 @@ pub enum ResultCode {
 impl std::fmt::Display for ResultCode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ResultCode::Ok           => write!(f, "OK"),
-            ResultCode::BadCommand   => write!(f, "bad command"),
-            ResultCode::BadDevice    => write!(f, "bad device"),
-            ResultCode::ConnRefused  => write!(f, "connection refused"),
-            ResultCode::NoSuchService=> write!(f, "no such service"),
-            ResultCode::BadVersion   => write!(f, "bad version"),
-            ResultCode::Unknown(n)   => write!(f, "unknown error {n}"),
+            ResultCode::Ok => write!(f, "OK"),
+            ResultCode::BadCommand => write!(f, "bad command"),
+            ResultCode::BadDevice => write!(f, "bad device"),
+            ResultCode::ConnRefused => write!(f, "connection refused"),
+            ResultCode::NoSuchService => write!(f, "no such service"),
+            ResultCode::BadVersion => write!(f, "bad version"),
+            ResultCode::Unknown(n) => write!(f, "unknown error {n}"),
         }
     }
 }
@@ -79,13 +79,25 @@ impl From<u32> for ResultCode {
 pub enum Event {
     DeviceList(Vec<Device>),
     DeviceAttached(Device),
-    DeviceDetached { device_id: u32 },
+    DeviceDetached {
+        device_id: u32,
+    },
     /// usbmux tunnel is now open — stop using the codec, use the raw socket
-    Connected { tag: u32 },
-    RequestOk { tag: u32 },
-    RequestFailed { tag: u32, code: ResultCode },
+    Connected {
+        tag: u32,
+    },
+    RequestOk {
+        tag: u32,
+    },
+    RequestFailed {
+        tag: u32,
+        code: ResultCode,
+    },
     Buid(String),
-    PairRecord { udid: String, record: Vec<u8> },
+    PairRecord {
+        udid: String,
+        record: Vec<u8>,
+    },
 }
 
 #[derive(Debug, Error)]

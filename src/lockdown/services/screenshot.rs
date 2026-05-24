@@ -34,10 +34,14 @@ impl ScreenshotClient {
         let msg = self.recv()?;
         let arr = as_array(&msg, "DLMessageVersionExchange")?;
         // arr[2] is the versions array; pick the first (max) version
-        let version = arr.get(2)
+        let version = arr
+            .get(2)
             .and_then(|v| v.as_array())
             .and_then(|a| a.first())
-            .and_then(|v| v.as_unsigned_integer().or_else(|| v.as_signed_integer().map(|i| i as u64)))
+            .and_then(|v| {
+                v.as_unsigned_integer()
+                    .or_else(|| v.as_signed_integer().map(|i| i as u64))
+            })
             .unwrap_or(300);
 
         // 2. Acknowledge with DLVersionsOk
@@ -50,11 +54,11 @@ impl ScreenshotClient {
         // 3. Wait for DLMessageDeviceReady
         let ready = self.recv()?;
         let ready_arr = as_array(&ready, "DLMessageDeviceReady")?;
-        let msg_type = ready_arr.first()
-            .and_then(|v| v.as_string())
-            .unwrap_or("");
+        let msg_type = ready_arr.first().and_then(|v| v.as_string()).unwrap_or("");
         if msg_type != "DLMessageDeviceReady" {
-            return Err(Error::Afc(format!("screenshot: expected DLMessageDeviceReady, got {msg_type:?}")));
+            return Err(Error::Afc(format!(
+                "screenshot: expected DLMessageDeviceReady, got {msg_type:?}"
+            )));
         }
 
         // 4. Send screenshot request
@@ -62,7 +66,10 @@ impl ScreenshotClient {
             Value::String("DLMessageProcessMessage".into()),
             Value::Dictionary({
                 let mut d = plist::Dictionary::new();
-                d.insert("MessageType".into(), Value::String("ScreenShotRequest".into()));
+                d.insert(
+                    "MessageType".into(),
+                    Value::String("ScreenShotRequest".into()),
+                );
                 d
             }),
         ]))?;
@@ -70,12 +77,20 @@ impl ScreenshotClient {
         // 5. Receive screenshot reply
         let reply = self.recv()?;
         let reply_arr = as_array(&reply, "ScreenShotReply")?;
-        let payload = reply_arr.get(1)
+        let payload = reply_arr
+            .get(1)
             .and_then(|v| v.as_dictionary())
             .ok_or_else(|| Error::Afc("screenshot: missing payload dict in reply".into()))?;
 
-        let png = payload.get("ScreenShotData")
-            .and_then(|v| if let Value::Data(b) = v { Some(b.clone()) } else { None })
+        let png = payload
+            .get("ScreenShotData")
+            .and_then(|v| {
+                if let Value::Data(b) = v {
+                    Some(b.clone())
+                } else {
+                    None
+                }
+            })
             .ok_or_else(|| Error::Afc("screenshot: no ScreenShotData in reply".into()))?;
 
         Ok(png)
@@ -98,7 +113,9 @@ impl ScreenshotClient {
         read_exact(&mut self.stream, &mut len_buf)?;
         let len = u32::from_be_bytes(len_buf) as usize;
         if len == 0 || len > 32 * 1024 * 1024 {
-            return Err(Error::Afc(format!("screenshot: implausible message length {len}")));
+            return Err(Error::Afc(format!(
+                "screenshot: implausible message length {len}"
+            )));
         }
         let mut body = vec![0u8; len];
         read_exact(&mut self.stream, &mut body)?;
@@ -117,7 +134,9 @@ fn read_exact(s: &mut MuxSocket, buf: &mut [u8]) -> Result<(), Error> {
     let mut done = 0;
     while done < buf.len() {
         let n = s.read(&mut buf[done..])?;
-        if n == 0 { return Err(Error::Closed); }
+        if n == 0 {
+            return Err(Error::Closed);
+        }
         done += n;
     }
     Ok(())

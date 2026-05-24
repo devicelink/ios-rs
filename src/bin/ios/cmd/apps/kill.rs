@@ -17,7 +17,8 @@ pub fn run(session: &mut DeviceSession, pid: i64) -> Result<()> {
         Some(input),
     );
 
-    let reply = xpc_conn.request(payload)
+    let reply = xpc_conn
+        .request(payload)
         .map_err(|e| anyhow!("appservice kill request: {e}"))?;
 
     if let Some(err) = reply.as_dict().and_then(|d| d.get("CoreDevice.error")) {
@@ -41,7 +42,10 @@ fn build_kill_input(pid: i64) -> Value {
 
 fn random_uuid_string() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let t = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
+    let t = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
     let b = t.to_le_bytes();
     format!("{:02X}{:02X}{:02X}{:02X}-{:02X}{:02X}-{:02X}{:02X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}",
         b[0],b[1],b[2],b[3], b[4],b[5], (b[6]&0x0f)|0x40, b[7],

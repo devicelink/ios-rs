@@ -53,7 +53,7 @@ fn le_u64_short_buffer_returns_zero() {
 #[test]
 fn parse_nul_strings_basic() {
     let data = b"DCIM\x00Books\x00Podcasts\x00";
-    let out  = parse_nul_strings(data);
+    let out = parse_nul_strings(data);
     assert_eq!(out, vec!["DCIM", "Books", "Podcasts"]);
 }
 
@@ -61,14 +61,14 @@ fn parse_nul_strings_basic() {
 fn parse_nul_strings_filters_empty() {
     // Double-NUL or trailing NUL must not produce empty strings
     let data = b"foo\x00\x00bar\x00";
-    let out  = parse_nul_strings(data);
+    let out = parse_nul_strings(data);
     assert_eq!(out, vec!["foo", "bar"]);
 }
 
 #[test]
 fn parse_kv_pairs_basic() {
     let data = b"st_ifmt\x00S_IFREG\x00st_size\x00123456\x00";
-    let map  = parse_kv_pairs(data);
+    let map = parse_kv_pairs(data);
     assert_eq!(map.get("st_ifmt").map(String::as_str), Some("S_IFREG"));
     assert_eq!(map.get("st_size").map(String::as_str), Some("123456"));
 }
@@ -77,7 +77,7 @@ fn parse_kv_pairs_basic() {
 fn parse_kv_pairs_odd_count_ignored() {
     // Trailing key without value should be silently dropped
     let data = b"st_ifmt\x00S_IFDIR\x00orphan\x00";
-    let map  = parse_kv_pairs(data);
+    let map = parse_kv_pairs(data);
     assert!(map.contains_key("st_ifmt"));
     assert!(!map.contains_key("orphan"));
 }
@@ -108,7 +108,10 @@ fn file_info_parses_symlink_with_target() {
     let data = b"st_ifmt\x00S_IFLNK\x00st_size\x000\x00st_mtime\x000\x00LinkTarget\x00/private/var/mobile/Media\x00";
     let info = FileInfo::parse("Media", data);
     assert!(matches!(info.file_type, FileType::Symlink));
-    assert_eq!(info.link_target.as_deref(), Some("/private/var/mobile/Media"));
+    assert_eq!(
+        info.link_target.as_deref(),
+        Some("/private/var/mobile/Media")
+    );
 }
 
 #[test]
@@ -123,11 +126,11 @@ fn file_info_unknown_type() {
 #[test]
 fn device_info_parses_correctly() {
     let data = b"Model\x00D421AP\x00FSTotalBytes\x0016000000000\x00FSFreeBytes\x008000000000\x00FSBlockSize\x004096\x00";
-    let dev  = AfcDeviceInfo::parse(data);
+    let dev = AfcDeviceInfo::parse(data);
     assert_eq!(dev.model, "D421AP");
     assert_eq!(dev.total_bytes, 16_000_000_000);
-    assert_eq!(dev.free_bytes,   8_000_000_000);
-    assert_eq!(dev.block_size,           4_096);
+    assert_eq!(dev.free_bytes, 8_000_000_000);
+    assert_eq!(dev.block_size, 4_096);
 }
 
 // ── unit tests: status names ──────────────────────────────────────────────────
@@ -158,29 +161,36 @@ fn request_header_format() {
     let magic = b"CFA6LPAA";
     let mut response = Vec::new();
     // Header: magic + entire_length + this_length + packet_num + op(status)
-    response.extend_from_slice(magic);                      // [0..8]   magic
-    response.extend_from_slice(&48u64.to_le_bytes());       // [8..16]  entire_length = 40+8
-    response.extend_from_slice(&48u64.to_le_bytes());       // [16..24] this_length
-    response.extend_from_slice(&1u64.to_le_bytes());        // [24..32] packet_num
-    response.extend_from_slice(&1u64.to_le_bytes());        // [32..40] op = STATUS
-    response.extend_from_slice(&0u64.to_le_bytes());        // [40..48] status = SUCCESS
+    response.extend_from_slice(magic); // [0..8]   magic
+    response.extend_from_slice(&48u64.to_le_bytes()); // [8..16]  entire_length = 40+8
+    response.extend_from_slice(&48u64.to_le_bytes()); // [16..24] this_length
+    response.extend_from_slice(&1u64.to_le_bytes()); // [24..32] packet_num
+    response.extend_from_slice(&1u64.to_le_bytes()); // [32..40] op = STATUS
+    response.extend_from_slice(&0u64.to_le_bytes()); // [40..48] status = SUCCESS
 
     struct MockStream {
-        read:    Cursor<Vec<u8>>,
+        read: Cursor<Vec<u8>>,
         written: Vec<u8>,
     }
     impl std::io::Read for MockStream {
-        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> { self.read.read(buf) }
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            self.read.read(buf)
+        }
     }
     impl std::io::Write for MockStream {
         fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
             self.written.extend_from_slice(buf);
             Ok(buf.len())
         }
-        fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
     }
 
-    let mock   = MockStream { read: Cursor::new(response), written: Vec::new() };
+    let mock = MockStream {
+        read: Cursor::new(response),
+        written: Vec::new(),
+    };
     let stream = ios_rs::usbmux::MuxSocket::external(mock);
     let mut afc = AfcClient::from_stream(stream);
 
@@ -197,42 +207,44 @@ fn request_header_format() {
 #[ignore = "requires connected iOS device"]
 fn integration_list_root() {
     setup();
-    use ios_rs::usbmux::Connection;
     use ios_rs::lockdown::LockdownSession;
+    use ios_rs::usbmux::Connection;
 
-    let mut conn    = Connection::open().expect("usbmux connect");
-    let devices     = conn.list_devices().expect("list devices");
-    let device      = devices.into_iter().next().expect("no device connected");
-    let mut session = LockdownSession::open_paired(device.device_id, &device.serial)
-        .expect("lockdown session");
+    let mut conn = Connection::open().expect("usbmux connect");
+    let devices = conn.list_devices().expect("list devices");
+    let device = devices.into_iter().next().expect("no device connected");
+    let mut session =
+        LockdownSession::open_paired(device.device_id, &device.serial).expect("lockdown session");
     let mut afc = AfcClient::connect(&mut session).expect("AFC connect");
 
     let entries = afc.list_dir("/").expect("list /");
     assert!(!entries.is_empty(), "root should have entries");
     // The media partition always has at least DCIM
-    assert!(entries.iter().any(|e| e == "DCIM"),
-            "DCIM not found in /: {entries:?}");
+    assert!(
+        entries.iter().any(|e| e == "DCIM"),
+        "DCIM not found in /: {entries:?}"
+    );
 }
 
 #[test]
 #[ignore = "requires connected iOS device"]
 fn integration_device_info_nonzero() {
     setup();
-    use ios_rs::usbmux::Connection;
     use ios_rs::lockdown::LockdownSession;
+    use ios_rs::usbmux::Connection;
 
-    let mut conn    = Connection::open().expect("usbmux connect");
-    let devices     = conn.list_devices().expect("list devices");
-    let device      = devices.into_iter().next().expect("no device connected");
-    let mut session = LockdownSession::open_paired(device.device_id, &device.serial)
-        .expect("lockdown session");
+    let mut conn = Connection::open().expect("usbmux connect");
+    let devices = conn.list_devices().expect("list devices");
+    let device = devices.into_iter().next().expect("no device connected");
+    let mut session =
+        LockdownSession::open_paired(device.device_id, &device.serial).expect("lockdown session");
     let mut afc = AfcClient::connect(&mut session).expect("AFC connect");
 
     let dev = afc.device_info().expect("device_info");
-    assert!(!dev.model.is_empty(),  "model should not be empty");
-    assert!(dev.total_bytes > 0,    "total_bytes should be > 0");
-    assert!(dev.free_bytes > 0,     "free_bytes should be > 0");
-    assert!(dev.block_size > 0,     "block_size should be > 0");
+    assert!(!dev.model.is_empty(), "model should not be empty");
+    assert!(dev.total_bytes > 0, "total_bytes should be > 0");
+    assert!(dev.free_bytes > 0, "free_bytes should be > 0");
+    assert!(dev.block_size > 0, "block_size should be > 0");
     assert!(dev.free_bytes <= dev.total_bytes);
 }
 
@@ -240,14 +252,14 @@ fn integration_device_info_nonzero() {
 #[ignore = "requires connected iOS device"]
 fn integration_mkdir_stat_remove() {
     setup();
-    use ios_rs::usbmux::Connection;
     use ios_rs::lockdown::LockdownSession;
+    use ios_rs::usbmux::Connection;
 
-    let mut conn    = Connection::open().expect("usbmux connect");
-    let devices     = conn.list_devices().expect("list devices");
-    let device      = devices.into_iter().next().expect("no device connected");
-    let mut session = LockdownSession::open_paired(device.device_id, &device.serial)
-        .expect("lockdown session");
+    let mut conn = Connection::open().expect("usbmux connect");
+    let devices = conn.list_devices().expect("list devices");
+    let device = devices.into_iter().next().expect("no device connected");
+    let mut session =
+        LockdownSession::open_paired(device.device_id, &device.serial).expect("lockdown session");
     let mut afc = AfcClient::connect(&mut session).expect("AFC connect");
 
     let dir = "/ios_rs_test_dir";
@@ -270,17 +282,17 @@ fn integration_mkdir_stat_remove() {
 #[ignore = "requires connected iOS device"]
 fn integration_write_read_remove() {
     setup();
-    use ios_rs::usbmux::Connection;
     use ios_rs::lockdown::LockdownSession;
+    use ios_rs::usbmux::Connection;
 
-    let mut conn    = Connection::open().expect("usbmux connect");
-    let devices     = conn.list_devices().expect("list devices");
-    let device      = devices.into_iter().next().expect("no device connected");
-    let mut session = LockdownSession::open_paired(device.device_id, &device.serial)
-        .expect("lockdown session");
+    let mut conn = Connection::open().expect("usbmux connect");
+    let devices = conn.list_devices().expect("list devices");
+    let device = devices.into_iter().next().expect("no device connected");
+    let mut session =
+        LockdownSession::open_paired(device.device_id, &device.serial).expect("lockdown session");
     let mut afc = AfcClient::connect(&mut session).expect("AFC connect");
 
-    let path    = "/ios_rs_test_file.bin";
+    let path = "/ios_rs_test_file.bin";
     let payload = b"hello from ios-rs afc test";
 
     afc.put_file(path, payload).expect("put_file");
@@ -295,14 +307,14 @@ fn integration_write_read_remove() {
 #[ignore = "requires connected iOS device"]
 fn integration_rename() {
     setup();
-    use ios_rs::usbmux::Connection;
     use ios_rs::lockdown::LockdownSession;
+    use ios_rs::usbmux::Connection;
 
-    let mut conn    = Connection::open().expect("usbmux connect");
-    let devices     = conn.list_devices().expect("list devices");
-    let device      = devices.into_iter().next().expect("no device connected");
-    let mut session = LockdownSession::open_paired(device.device_id, &device.serial)
-        .expect("lockdown session");
+    let mut conn = Connection::open().expect("usbmux connect");
+    let devices = conn.list_devices().expect("list devices");
+    let device = devices.into_iter().next().expect("no device connected");
+    let mut session =
+        LockdownSession::open_paired(device.device_id, &device.serial).expect("lockdown session");
     let mut afc = AfcClient::connect(&mut session).expect("AFC connect");
 
     // iOS AFC media-partition rename behaviour (observed on iOS 18.7.1):
@@ -331,7 +343,10 @@ fn integration_rename() {
     let info = afc.get_file_info(dst).expect("dst should exist");
     assert!(matches!(info.file_type, FileType::Regular));
     let content = afc.read_file(dst).expect("read dst");
-    assert_eq!(content, dst_original, "dst retains its original content (not moved from src)");
+    assert_eq!(
+        content, dst_original,
+        "dst retains its original content (not moved from src)"
+    );
 
     afc.remove_path(dst).expect("cleanup");
 }
@@ -353,19 +368,24 @@ fn integration_house_arrest_list_root() {
     let bundle_id = std::env::var("APP_BUNDLE_ID")
         .expect("set APP_BUNDLE_ID to an installed user-app bundle ID");
 
-    let mut conn   = Connection::open().expect("usbmux connect");
-    let device     = conn.list_devices().expect("list devices")
-        .into_iter().next().expect("no device connected");
-    let mut session = DeviceSession::open(device, ConnectionMode::Auto)
-        .expect("device session");
+    let mut conn = Connection::open().expect("usbmux connect");
+    let device = conn
+        .list_devices()
+        .expect("list devices")
+        .into_iter()
+        .next()
+        .expect("no device connected");
+    let mut session = DeviceSession::open(device, ConnectionMode::Auto).expect("device session");
 
-    let mut afc = AfcClient::connect_app(session.lockdown(), &bundle_id)
-        .expect("house_arrest connect");
+    let mut afc =
+        AfcClient::connect_app(session.lockdown(), &bundle_id).expect("house_arrest connect");
 
     let entries = afc.list_dir("/").expect("list /");
     println!("app container /: {entries:?}");
-    assert!(entries.iter().any(|e| e == "Documents"),
-        "Documents not found in app container root: {entries:?}");
+    assert!(
+        entries.iter().any(|e| e == "Documents"),
+        "Documents not found in app container root: {entries:?}"
+    );
 }
 
 #[test]
@@ -378,16 +398,19 @@ fn integration_house_arrest_write_read_remove() {
     let bundle_id = std::env::var("APP_BUNDLE_ID")
         .expect("set APP_BUNDLE_ID to an installed user-app bundle ID");
 
-    let mut conn   = Connection::open().expect("usbmux connect");
-    let device     = conn.list_devices().expect("list devices")
-        .into_iter().next().expect("no device connected");
-    let mut session = DeviceSession::open(device, ConnectionMode::Auto)
-        .expect("device session");
+    let mut conn = Connection::open().expect("usbmux connect");
+    let device = conn
+        .list_devices()
+        .expect("list devices")
+        .into_iter()
+        .next()
+        .expect("no device connected");
+    let mut session = DeviceSession::open(device, ConnectionMode::Auto).expect("device session");
 
-    let mut afc = AfcClient::connect_app(session.lockdown(), &bundle_id)
-        .expect("house_arrest connect");
+    let mut afc =
+        AfcClient::connect_app(session.lockdown(), &bundle_id).expect("house_arrest connect");
 
-    let path    = "/Documents/ios_rs_test.bin";
+    let path = "/Documents/ios_rs_test.bin";
     let payload = b"house-arrest test payload";
 
     afc.put_file(path, payload).expect("put_file");

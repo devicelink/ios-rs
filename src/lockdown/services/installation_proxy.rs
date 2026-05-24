@@ -1,8 +1,8 @@
 //! `com.apple.mobile.installation_proxy` — list, install, and uninstall apps.
 use std::io::{Read, Write};
 
-use plist::Value;
 use crate::usbmux::MuxSocket;
+use plist::Value;
 
 use crate::lockdown::{Error, LockdownSession};
 
@@ -21,21 +21,21 @@ pub enum AppType {
 impl AppType {
     fn as_str(self) -> &'static str {
         match self {
-            AppType::User   => "User",
+            AppType::User => "User",
             AppType::System => "System",
-            AppType::Any    => "Any",
+            AppType::Any => "Any",
         }
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct AppInfo {
-    pub bundle_id:     String,
-    pub name:          String,
-    pub version:       String,
+    pub bundle_id: String,
+    pub name: String,
+    pub version: String,
     pub short_version: String,
-    pub app_type:      String,
-    pub path:          String,
+    pub app_type: String,
+    pub path: String,
 }
 
 // ── client ────────────────────────────────────────────────────────────────────
@@ -46,7 +46,9 @@ pub struct InstallationProxy {
 
 impl InstallationProxy {
     pub fn connect(session: &mut LockdownSession) -> Result<Self, Error> {
-        Ok(InstallationProxy { stream: session.connect_service(SERVICE)? })
+        Ok(InstallationProxy {
+            stream: session.connect_service(SERVICE)?,
+        })
     }
 
     /// Build an `InstallationProxy` from an already-open stream (e.g. via RSD shim).
@@ -61,21 +63,29 @@ impl InstallationProxy {
     pub fn list_apps(&mut self, app_type: AppType) -> Result<Vec<AppInfo>, Error> {
         let req = plist_dict([
             ("Command", Value::String("Browse".into())),
-            ("ClientOptions", Value::Dictionary({
-                let mut d = plist::Dictionary::new();
-                d.insert("ApplicationType".into(),
-                    Value::String(app_type.as_str().into()));
-                d.insert("ReturnAttributes".into(), Value::Array(vec![
-                    Value::String("CFBundleIdentifier".into()),
-                    Value::String("CFBundleDisplayName".into()),
-                    Value::String("CFBundleName".into()),
-                    Value::String("CFBundleShortVersionString".into()),
-                    Value::String("CFBundleVersion".into()),
-                    Value::String("ApplicationType".into()),
-                    Value::String("Path".into()),
-                ]));
-                d
-            })),
+            (
+                "ClientOptions",
+                Value::Dictionary({
+                    let mut d = plist::Dictionary::new();
+                    d.insert(
+                        "ApplicationType".into(),
+                        Value::String(app_type.as_str().into()),
+                    );
+                    d.insert(
+                        "ReturnAttributes".into(),
+                        Value::Array(vec![
+                            Value::String("CFBundleIdentifier".into()),
+                            Value::String("CFBundleDisplayName".into()),
+                            Value::String("CFBundleName".into()),
+                            Value::String("CFBundleShortVersionString".into()),
+                            Value::String("CFBundleVersion".into()),
+                            Value::String("ApplicationType".into()),
+                            Value::String("Path".into()),
+                        ]),
+                    );
+                    d
+                }),
+            ),
         ]);
         send(&mut self.stream, &req)?;
 
@@ -146,7 +156,8 @@ impl InstallationProxy {
             };
 
             if let Some(e) = dict.get("Error").and_then(|v| v.as_string()) {
-                let desc = dict.get("ErrorDescription")
+                let desc = dict
+                    .get("ErrorDescription")
                     .and_then(|v| v.as_string())
                     .unwrap_or("");
                 return Err(Error::Lockdown(format!("{op} error: {e} — {desc}")));
@@ -186,7 +197,9 @@ fn read_exact(s: &mut MuxSocket, buf: &mut [u8]) -> Result<(), Error> {
     let mut filled = 0;
     while filled < buf.len() {
         let n = s.read(&mut buf[filled..])?;
-        if n == 0 { return Err(Error::Closed); }
+        if n == 0 {
+            return Err(Error::Closed);
+        }
         filled += n;
     }
     Ok(())
@@ -196,25 +209,34 @@ fn read_exact(s: &mut MuxSocket, buf: &mut [u8]) -> Result<(), Error> {
 
 fn plist_dict<const N: usize>(pairs: [(&str, Value); N]) -> Value {
     let mut d = plist::Dictionary::new();
-    for (k, v) in pairs { d.insert(k.into(), v); }
+    for (k, v) in pairs {
+        d.insert(k.into(), v);
+    }
     Value::Dictionary(d)
 }
 
 fn parse_app_info(v: &Value) -> Option<AppInfo> {
     let d = v.as_dictionary()?;
     let s = |key: &str| -> String {
-        d.get(key).and_then(|v| v.as_string()).unwrap_or_default().to_string()
+        d.get(key)
+            .and_then(|v| v.as_string())
+            .unwrap_or_default()
+            .to_string()
     };
     let name = {
         let display = s("CFBundleDisplayName");
-        if display.is_empty() { s("CFBundleName") } else { display }
+        if display.is_empty() {
+            s("CFBundleName")
+        } else {
+            display
+        }
     };
     Some(AppInfo {
-        bundle_id:     s("CFBundleIdentifier"),
+        bundle_id: s("CFBundleIdentifier"),
         name,
-        version:       s("CFBundleVersion"),
+        version: s("CFBundleVersion"),
         short_version: s("CFBundleShortVersionString"),
-        app_type:      s("ApplicationType"),
-        path:          s("Path"),
+        app_type: s("ApplicationType"),
+        path: s("Path"),
     })
 }

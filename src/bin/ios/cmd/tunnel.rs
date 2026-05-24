@@ -20,19 +20,19 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use crate::cmd::output::{print_json, ActionResult, OutputMode};
 use anyhow::{bail, Context, Result};
 use ios_rs::rsd::ServiceEntry;
 use ios_rs::tunnel::{detect_version, Ios17Tunnel, SmoltcpTunnel, DAEMON_SOCKET};
 use ios_rs::usbmux::{Connection as MuxConn, Event};
-use crate::cmd::output::{print_json, ActionResult, OutputMode};
 
 const PID_PATH: &str = "/tmp/ios-rsd.pid";
 
 // ── shared state ──────────────────────────────────────────────────────────────
 
 struct DeviceTunnel {
-    tunnel:    Arc<SmoltcpTunnel>,
-    services:  HashMap<String, ServiceEntry>,
+    tunnel: Arc<SmoltcpTunnel>,
+    services: HashMap<String, ServiceEntry>,
     device_id: u32,
 }
 
@@ -45,9 +45,12 @@ pub fn daemon() -> Result<()> {
     let _ = std::fs::write(PID_PATH, std::process::id().to_string());
     let _ = std::fs::remove_file(DAEMON_SOCKET);
 
-    let listener = UnixListener::bind(DAEMON_SOCKET)
-        .with_context(|| format!("bind {DAEMON_SOCKET}"))?;
-    eprintln!("[ios-rsd] started  pid={}  socket={DAEMON_SOCKET}", std::process::id());
+    let listener =
+        UnixListener::bind(DAEMON_SOCKET).with_context(|| format!("bind {DAEMON_SOCKET}"))?;
+    eprintln!(
+        "[ios-rsd] started  pid={}  socket={DAEMON_SOCKET}",
+        std::process::id()
+    );
 
     let state: State = Arc::new(Mutex::new(HashMap::new()));
 
@@ -75,7 +78,7 @@ pub fn daemon() -> Result<()> {
 
 #[derive(serde::Serialize)]
 struct TunnelEntry {
-    udid:     String,
+    udid: String,
     services: u64,
 }
 
@@ -115,8 +118,7 @@ pub fn start(output: OutputMode) -> Result<()> {
 
 /// Send a Shutdown request and wait for the daemon to exit.
 pub fn stop(output: OutputMode) -> Result<()> {
-    let mut s = UnixStream::connect(DAEMON_SOCKET)
-        .context("daemon not running")?;
+    let mut s = UnixStream::connect(DAEMON_SOCKET).context("daemon not running")?;
     let mut d = plist::Dictionary::new();
     d.insert("Request".into(), plist::Value::String("Shutdown".into()));
     send_plist(&mut s, &plist::Value::Dictionary(d))?;
@@ -139,22 +141,36 @@ pub fn list(output: OutputMode) -> Result<()> {
     let resp = recv_plist(&mut s)?;
     let dict = resp.as_dictionary().context("bad response")?;
     if dict.get("Status").and_then(|v| v.as_string()) != Some("Ok") {
-        let err = dict.get("Error").and_then(|v| v.as_string()).unwrap_or("unknown");
+        let err = dict
+            .get("Error")
+            .and_then(|v| v.as_string())
+            .unwrap_or("unknown");
         bail!("daemon error: {err}");
     }
 
-    let devices = dict.get("Devices")
+    let devices = dict
+        .get("Devices")
         .and_then(|v| v.as_array())
         .map(|a| a.as_slice())
         .unwrap_or(&[]);
 
     if output.is_json() {
-        let entries: Vec<TunnelEntry> = devices.iter().filter_map(|entry| {
-            let dd = entry.as_dictionary()?;
-            let udid = dd.get("UDID").and_then(|v| v.as_string()).unwrap_or("?").to_owned();
-            let services = dd.get("Services").and_then(|v| v.as_unsigned_integer()).unwrap_or(0);
-            Some(TunnelEntry { udid, services })
-        }).collect();
+        let entries: Vec<TunnelEntry> = devices
+            .iter()
+            .filter_map(|entry| {
+                let dd = entry.as_dictionary()?;
+                let udid = dd
+                    .get("UDID")
+                    .and_then(|v| v.as_string())
+                    .unwrap_or("?")
+                    .to_owned();
+                let services = dd
+                    .get("Services")
+                    .and_then(|v| v.as_unsigned_integer())
+                    .unwrap_or(0);
+                Some(TunnelEntry { udid, services })
+            })
+            .collect();
         return print_json(&entries);
     }
 
@@ -165,7 +181,10 @@ pub fn list(output: OutputMode) -> Result<()> {
     for entry in devices {
         if let Some(dd) = entry.as_dictionary() {
             let udid = dd.get("UDID").and_then(|v| v.as_string()).unwrap_or("?");
-            let n    = dd.get("Services").and_then(|v| v.as_unsigned_integer()).unwrap_or(0);
+            let n = dd
+                .get("Services")
+                .and_then(|v| v.as_unsigned_integer())
+                .unwrap_or(0);
             println!("{udid}  ({n} services)");
         }
     }
@@ -177,11 +196,17 @@ pub fn list(output: OutputMode) -> Result<()> {
 fn watch_devices(state: State) {
     let conn = match MuxConn::open() {
         Ok(c) => c,
-        Err(e) => { eprintln!("[ios-rsd] usbmux open: {e}"); return; }
+        Err(e) => {
+            eprintln!("[ios-rsd] usbmux open: {e}");
+            return;
+        }
     };
     let mut listener = match conn.listen() {
         Ok(l) => l,
-        Err(e) => { eprintln!("[ios-rsd] usbmux listen: {e}"); return; }
+        Err(e) => {
+            eprintln!("[ios-rsd] usbmux listen: {e}");
+            return;
+        }
     };
     loop {
         match listener.next() {
@@ -208,7 +233,7 @@ fn watch_devices(state: State) {
 fn handle_client(mut stream: UnixStream, state: &State) -> Result<()> {
     // A failed initial read usually means a liveness probe (connected + immediately dropped).
     let req = match recv_plist(&mut stream) {
-        Ok(v)  => v,
+        Ok(v) => v,
         Err(_) => return Ok(()),
     };
     let dict = req.as_dictionary().context("request not a dict")?;
@@ -228,8 +253,16 @@ fn handle_client(mut stream: UnixStream, state: &State) -> Result<()> {
         }
     }
 
-    let udid    = dict.get("UDID").and_then(|v| v.as_string()).context("no UDID")?.to_owned();
-    let service = dict.get("Service").and_then(|v| v.as_string()).context("no Service")?.to_owned();
+    let udid = dict
+        .get("UDID")
+        .and_then(|v| v.as_string())
+        .context("no UDID")?
+        .to_owned();
+    let service = dict
+        .get("Service")
+        .and_then(|v| v.as_string())
+        .context("no Service")?
+        .to_owned();
 
     if let Err(e) = ensure_tunnel(&udid, state) {
         return send_err(&mut stream, &format!("{e:#}"));
@@ -239,8 +272,12 @@ fn handle_client(mut stream: UnixStream, state: &State) -> Result<()> {
     if service == "_rsd" {
         let (tunnel, server_addr, rsd_port) = {
             let map = state.lock().unwrap();
-            let dt  = map.get(&udid).context("tunnel vanished")?;
-            (Arc::clone(&dt.tunnel), dt.tunnel.params.server_addr, dt.tunnel.params.server_rsd_port)
+            let dt = map.get(&udid).context("tunnel vanished")?;
+            (
+                Arc::clone(&dt.tunnel),
+                dt.tunnel.params.server_addr,
+                dt.tunnel.params.server_rsd_port,
+            )
         };
         match tunnel.connect(server_addr, rsd_port) {
             Ok(smc) => {
@@ -255,12 +292,15 @@ fn handle_client(mut stream: UnixStream, state: &State) -> Result<()> {
     // Regular service — look up port in RSD catalog.
     let port = {
         let map = state.lock().unwrap();
-        let dt  = map.get(&udid).context("tunnel vanished")?;
+        let dt = map.get(&udid).context("tunnel vanished")?;
         match dt.services.get(&service).map(|e| e.port) {
             Some(p) => p,
             None => {
                 drop(map);
-                return send_err(&mut stream, &format!("service '{service}' not in RSD catalog"));
+                return send_err(
+                    &mut stream,
+                    &format!("service '{service}' not in RSD catalog"),
+                );
             }
         }
     };
@@ -268,12 +308,12 @@ fn handle_client(mut stream: UnixStream, state: &State) -> Result<()> {
     // Clone Arc so connect() doesn't hold the mutex.
     let (tunnel, server_addr) = {
         let map = state.lock().unwrap();
-        let dt  = map.get(&udid).context("tunnel vanished")?;
+        let dt = map.get(&udid).context("tunnel vanished")?;
         (Arc::clone(&dt.tunnel), dt.tunnel.params.server_addr)
     };
 
     let smc = match tunnel.connect(server_addr, port) {
-        Ok(s)  => s,
+        Ok(s) => s,
         Err(e) => return send_err(&mut stream, &e.to_string()),
     };
 
@@ -292,17 +332,20 @@ fn handle_client(mut stream: UnixStream, state: &State) -> Result<()> {
 fn handle_list(stream: &mut UnixStream, state: &State) -> Result<()> {
     let devices: Vec<plist::Value> = {
         let map = state.lock().unwrap();
-        map.iter().map(|(udid, dt)| {
-            let mut d = plist::Dictionary::new();
-            d.insert("UDID".into(), plist::Value::String(udid.clone()));
-            d.insert("Services".into(), plist::Value::Integer(
-                plist::Integer::from(dt.services.len() as i64),
-            ));
-            plist::Value::Dictionary(d)
-        }).collect()
+        map.iter()
+            .map(|(udid, dt)| {
+                let mut d = plist::Dictionary::new();
+                d.insert("UDID".into(), plist::Value::String(udid.clone()));
+                d.insert(
+                    "Services".into(),
+                    plist::Value::Integer(plist::Integer::from(dt.services.len() as i64)),
+                );
+                plist::Value::Dictionary(d)
+            })
+            .collect()
     };
     let mut resp = plist::Dictionary::new();
-    resp.insert("Status".into(),  plist::Value::String("Ok".into()));
+    resp.insert("Status".into(), plist::Value::String("Ok".into()));
     resp.insert("Devices".into(), plist::Value::Array(devices));
     send_plist(stream, &plist::Value::Dictionary(resp))
 }
@@ -315,18 +358,19 @@ fn ensure_tunnel(udid: &str, state: &State) -> Result<()> {
     eprintln!("[ios-rsd] establishing tunnel for {udid}…");
 
     let mut conn = MuxConn::open().context("usbmux open")?;
-    let devices  = conn.list_devices().context("list devices")?;
-    let device   = devices.iter()
+    let devices = conn.list_devices().context("list devices")?;
+    let device = devices
+        .iter()
         .find(|d| d.serial.eq_ignore_ascii_case(udid))
         .with_context(|| format!("device {udid} not connected"))?;
     let device_id = device.device_id;
 
     let version = detect_version(device_id).context("detect version")?;
-    let t       = Ios17Tunnel::connect_via_lockdown_udid(device_id, Some(udid), version)
+    let t = Ios17Tunnel::connect_via_lockdown_udid(device_id, Some(udid), version)
         .context("CDTunnel")?;
-    let rsd     = t.connect_rsd().context("RSD handshake")?;
+    let rsd = t.connect_rsd().context("RSD handshake")?;
     let services = rsd.services().clone();
-    let n        = services.len();
+    let n = services.len();
 
     {
         let mut map = state.lock().unwrap();
@@ -352,7 +396,8 @@ fn rsd_checkin(stream: &std::os::unix::net::UnixStream) -> Result<()> {
         "<key>ProtocolVersion</key><string>2</string>",
         "<key>Request</key><string>RSDCheckin</string>",
         "</dict></plist>\n",
-    ).as_bytes();
+    )
+    .as_bytes();
     let len = plist_bytes.len() as u32;
     s.write_all(&len.to_be_bytes())?;
     s.write_all(plist_bytes)?;
@@ -375,11 +420,19 @@ fn rsd_checkin(stream: &std::os::unix::net::UnixStream) -> Result<()> {
 
 /// Copy bytes between the IPC socket and the smoltcp UnixStream pipe.
 fn proxy(ipc: UnixStream, smc: std::os::unix::net::UnixStream) {
-    let mut ipc_r = match ipc.try_clone() { Ok(s) => s, Err(_) => return };
-    let mut smc_r = match smc.try_clone() { Ok(s) => s, Err(_) => return };
+    let mut ipc_r = match ipc.try_clone() {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+    let mut smc_r = match smc.try_clone() {
+        Ok(s) => s,
+        Err(_) => return,
+    };
     let mut ipc_w = ipc;
     let mut smc_w = smc;
-    std::thread::spawn(move || { io::copy(&mut smc_r, &mut ipc_w).ok(); });
+    std::thread::spawn(move || {
+        io::copy(&mut smc_r, &mut ipc_w).ok();
+    });
     io::copy(&mut ipc_r, &mut smc_w).ok();
 }
 
@@ -413,7 +466,7 @@ fn send_ok(s: &mut UnixStream) -> Result<()> {
 fn send_err(s: &mut UnixStream, msg: &str) -> Result<()> {
     let mut d = plist::Dictionary::new();
     d.insert("Status".into(), plist::Value::String("Error".into()));
-    d.insert("Error".into(),  plist::Value::String(msg.into()));
+    d.insert("Error".into(), plist::Value::String(msg.into()));
     send_plist(s, &plist::Value::Dictionary(d))
 }
 

@@ -1,13 +1,13 @@
 use std::io::{Read, Write};
 use std::sync::Arc;
 
+use crate::usbmux::{Connection as MuxConn, MuxSocket};
 use plist::Value;
-use rustls::{ClientConfig, ClientConnection, StreamOwned};
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName, UnixTime};
+use rustls::{ClientConfig, ClientConnection, StreamOwned};
 use rustls::{DigitallySignedStruct, SignatureScheme};
 use serde::{Deserialize, Serialize};
-use crate::usbmux::{Connection as MuxConn, MuxSocket};
 
 use super::error::Error;
 use super::pair_record::PairRecord;
@@ -27,9 +27,9 @@ enum Stream {
 impl Read for Stream {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         match self {
-            Stream::Plain(s)    => s.read(buf),
-            Stream::Tls(s)      => s.read(buf),
-            Stream::Upgrading   => unreachable!("read during TLS upgrade"),
+            Stream::Plain(s) => s.read(buf),
+            Stream::Tls(s) => s.read(buf),
+            Stream::Upgrading => unreachable!("read during TLS upgrade"),
         }
     }
 }
@@ -37,16 +37,16 @@ impl Read for Stream {
 impl Write for Stream {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         match self {
-            Stream::Plain(s)    => s.write(buf),
-            Stream::Tls(s)      => s.write(buf),
-            Stream::Upgrading   => unreachable!("write during TLS upgrade"),
+            Stream::Plain(s) => s.write(buf),
+            Stream::Tls(s) => s.write(buf),
+            Stream::Upgrading => unreachable!("write during TLS upgrade"),
         }
     }
     fn flush(&mut self) -> std::io::Result<()> {
         match self {
-            Stream::Plain(s)    => s.flush(),
-            Stream::Tls(s)      => s.flush(),
-            Stream::Upgrading   => unreachable!("flush during TLS upgrade"),
+            Stream::Plain(s) => s.flush(),
+            Stream::Tls(s) => s.flush(),
+            Stream::Upgrading => unreachable!("flush during TLS upgrade"),
         }
     }
 }
@@ -62,18 +62,28 @@ struct AcceptAnyServerCert;
 
 impl ServerCertVerifier for AcceptAnyServerCert {
     fn verify_server_cert(
-        &self, _end_entity: &CertificateDer<'_>, _intermediates: &[CertificateDer<'_>],
-        _server_name: &ServerName<'_>, _ocsp_response: &[u8], _now: UnixTime,
+        &self,
+        _end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        _server_name: &ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: UnixTime,
     ) -> Result<ServerCertVerified, rustls::Error> {
         Ok(ServerCertVerified::assertion())
     }
     fn verify_tls12_signature(
-        &self, _message: &[u8], _cert: &CertificateDer<'_>, _dss: &DigitallySignedStruct,
+        &self,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &DigitallySignedStruct,
     ) -> Result<HandshakeSignatureValid, rustls::Error> {
         Ok(HandshakeSignatureValid::assertion())
     }
     fn verify_tls13_signature(
-        &self, _message: &[u8], _cert: &CertificateDer<'_>, _dss: &DigitallySignedStruct,
+        &self,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &DigitallySignedStruct,
     ) -> Result<HandshakeSignatureValid, rustls::Error> {
         Ok(HandshakeSignatureValid::assertion())
     }
@@ -98,35 +108,35 @@ impl ServerCertVerifier for AcceptAnyServerCert {
 #[derive(Serialize)]
 #[serde(rename_all = "PascalCase")]
 struct StartSessionReq<'a> {
-    request:     &'a str,
+    request: &'a str,
     #[serde(rename = "HostID")]
-    host_id:     &'a str,
+    host_id: &'a str,
     #[serde(rename = "SystemBUID")]
     system_buid: &'a str,
-    label:       &'a str,
+    label: &'a str,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "PascalCase")]
 struct StopSessionReq<'a> {
-    request:    &'a str,
+    request: &'a str,
     #[serde(rename = "SessionID")]
     session_id: &'a str,
-    label:      &'a str,
+    label: &'a str,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "PascalCase")]
 struct Request<'a> {
-    request:   &'a str,
+    request: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
-    domain:    Option<&'a str>,
+    domain: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    key:       Option<&'a str>,
+    key: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    label:     Option<&'a str>,
+    label: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    service:   Option<&'a str>,
+    service: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     include_escrow_bag: Option<bool>,
 }
@@ -134,14 +144,14 @@ struct Request<'a> {
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "PascalCase")]
 struct BaseResponse {
-    error:  Option<String>,
-    value:  Option<plist::Value>,
-    port:   Option<u16>,
+    error: Option<String>,
+    value: Option<plist::Value>,
+    port: Option<u16>,
     #[serde(rename = "EnableServiceSSL")]
     enable_service_ssl: Option<bool>,
     // StartSession fields
     #[serde(rename = "SessionID")]
-    session_id:         Option<String>,
+    session_id: Option<String>,
     #[serde(rename = "EnableSessionSSL")]
     enable_session_ssl: Option<bool>,
 }
@@ -171,7 +181,9 @@ fn read_exact<R: Read>(r: &mut R, buf: &mut [u8]) -> Result<(), Error> {
     let mut filled = 0;
     while filled < buf.len() {
         let n = r.read(&mut buf[filled..])?;
-        if n == 0 { return Err(Error::Closed); }
+        if n == 0 {
+            return Err(Error::Closed);
+        }
         filled += n;
     }
     Ok(())
@@ -181,26 +193,28 @@ fn read_exact<R: Read>(r: &mut R, buf: &mut [u8]) -> Result<(), Error> {
 
 /// A session with the lockdownd service on a specific device.
 pub struct LockdownSession {
-    stream:      Stream,
-    session_id:  Option<String>,
-    device_id:   u32,
+    stream: Stream,
+    session_id: Option<String>,
+    device_id: u32,
     /// Stored after start_session so connect_service can TLS-wrap service sockets.
     pair_record: Option<PairRecord>,
 }
 
 impl LockdownSession {
     pub fn connect(device_id: u32) -> Result<Self, Error> {
-        let mux    = MuxConn::open()?;
+        let mux = MuxConn::open()?;
         let stream = mux.open_tunnel(device_id, super::LOCKDOWN_PORT)?;
         Ok(LockdownSession {
             stream: Stream::Plain(stream),
-            session_id:  None,
+            session_id: None,
             device_id,
             pair_record: None,
         })
     }
 
-    pub fn device_id(&self) -> u32 { self.device_id }
+    pub fn device_id(&self) -> u32 {
+        self.device_id
+    }
 
     /// Start a named service and open a fresh usbmux tunnel to its port.
     ///
@@ -208,18 +222,19 @@ impl LockdownSession {
     /// socket is already TLS-wrapped using the session's pair record.
     /// Service code treats it as a plain `MuxSocket` either way.
     pub fn connect_service(&mut self, name: &str) -> Result<MuxSocket, Error> {
-        let svc    = self.start_service(name)?;
-        let mux    = MuxConn::open()?;
+        let svc = self.start_service(name)?;
+        let mux = MuxConn::open()?;
         let socket = mux.open_tunnel(self.device_id, svc.port)?;
 
         if svc.enable_service_ssl {
-            let pair = self.pair_record.as_ref()
-                .ok_or_else(|| Error::Tls(format!(
+            let pair = self.pair_record.as_ref().ok_or_else(|| {
+                Error::Tls(format!(
                     "service {name} requires SSL but no pair record — call start_session first"
-                )))?;
+                ))
+            })?;
             let config = build_tls_config(pair)?;
-            let server_name = ServerName::try_from("localhost")
-                .map_err(|e| Error::Tls(e.to_string()))?;
+            let server_name =
+                ServerName::try_from("localhost").map_err(|e| Error::Tls(e.to_string()))?;
             let mut conn = ClientConnection::new(Arc::new(config), server_name)
                 .map_err(|e| Error::Tls(e.to_string()))?;
             let mut sock = socket;
@@ -239,8 +254,8 @@ impl LockdownSession {
     /// Convenience: open session, read pair record from usbmuxd, call
     /// `start_session` in one step.  Returns `self` for chaining.
     pub fn open_paired(device_id: u32, udid: &str) -> Result<Self, Error> {
-        let mut session     = Self::connect(device_id)?;
-        let pair_record     = PairRecord::read_from_usbmuxd(udid)?;
+        let mut session = Self::connect(device_id)?;
+        let pair_record = PairRecord::read_from_usbmuxd(udid)?;
         session.start_session(&pair_record)?;
         Ok(session)
     }
@@ -248,17 +263,18 @@ impl LockdownSession {
     /// Send `StartSession` and upgrade the socket to TLS if required.
     pub fn start_session(&mut self, pair: &PairRecord) -> Result<String, Error> {
         let req = StartSessionReq {
-            request:     "StartSession",
-            host_id:     &pair.host_id,
+            request: "StartSession",
+            host_id: &pair.host_id,
             system_buid: &pair.system_buid,
-            label:       "devicelink",
+            label: "devicelink",
         };
         send_plist(&mut self.stream, &req)?;
         let resp = self.expect_response()?;
 
-        let session_id = resp.session_id
+        let session_id = resp
+            .session_id
             .ok_or_else(|| Error::Lockdown("StartSession: no SessionID".into()))?;
-        self.session_id  = Some(session_id.clone());
+        self.session_id = Some(session_id.clone());
         self.pair_record = Some(pair.clone());
 
         if resp.enable_session_ssl.unwrap_or(false) {
@@ -269,12 +285,16 @@ impl LockdownSession {
 
     /// Close the active session.
     pub fn stop_session(&mut self) -> Result<(), Error> {
-        let Some(sid) = self.session_id.take() else { return Ok(()); };
-        if matches!(self.stream, Stream::Upgrading) { return Ok(()); }
+        let Some(sid) = self.session_id.take() else {
+            return Ok(());
+        };
+        if matches!(self.stream, Stream::Upgrading) {
+            return Ok(());
+        }
         let req = StopSessionReq {
-            request:    "StopSession",
+            request: "StopSession",
             session_id: &sid,
-            label:      "devicelink",
+            label: "devicelink",
         };
         send_plist(&mut self.stream, &req)?;
         // Drain and discard the acknowledgement
@@ -287,32 +307,47 @@ impl LockdownSession {
     pub fn get_all_values(&mut self) -> Result<DeviceInfo, Error> {
         let req = Request {
             request: "GetValue",
-            domain: None, key: None,
+            domain: None,
+            key: None,
             label: Some("devicelink"),
-            service: None, include_escrow_bag: None,
+            service: None,
+            include_escrow_bag: None,
         };
         send_plist(&mut self.stream, &req)?;
         let resp = self.expect_response()?;
         match resp.value {
             Some(Value::Dictionary(d)) => Ok(DeviceInfo::from_dict(d)),
-            _ => Err(Error::Lockdown("GetValue returned unexpected payload".into())),
+            _ => Err(Error::Lockdown(
+                "GetValue returned unexpected payload".into(),
+            )),
         }
     }
 
     /// Set a lockdownd value, optionally scoped to a domain.
     /// Pass `domain: None` to write to the root domain.
-    pub fn set_value(&mut self, domain: Option<&str>, key: &str, value: Value) -> Result<(), Error> {
+    pub fn set_value(
+        &mut self,
+        domain: Option<&str>,
+        key: &str,
+        value: Value,
+    ) -> Result<(), Error> {
         #[derive(serde::Serialize)]
         #[serde(rename_all = "PascalCase")]
         struct SetValueRequest<'a> {
             request: &'a str,
             #[serde(skip_serializing_if = "Option::is_none")]
-            domain:  Option<&'a str>,
-            key:     &'a str,
-            value:   plist::Value,
-            label:   &'a str,
+            domain: Option<&'a str>,
+            key: &'a str,
+            value: plist::Value,
+            label: &'a str,
         }
-        let req = SetValueRequest { request: "SetValue", domain, key, value, label: "devicelink" };
+        let req = SetValueRequest {
+            request: "SetValue",
+            domain,
+            key,
+            value,
+            label: "devicelink",
+        };
         send_plist(&mut self.stream, &req)?;
         let resp = self.expect_response()?;
         if let Some(e) = resp.error {
@@ -327,11 +362,13 @@ impl LockdownSession {
             domain,
             key: Some(key),
             label: Some("devicelink"),
-            service: None, include_escrow_bag: None,
+            service: None,
+            include_escrow_bag: None,
         };
         send_plist(&mut self.stream, &req)?;
         let resp = self.expect_response()?;
-        resp.value.ok_or_else(|| Error::Lockdown(format!("no Value for key {key}")))
+        resp.value
+            .ok_or_else(|| Error::Lockdown(format!("no Value for key {key}")))
     }
 
     /// Returns the list of available service names.
@@ -350,9 +387,11 @@ impl LockdownSession {
         // Fallback: GetValue(nil, nil) and look for a Services sub-dict
         let req = Request {
             request: "GetValue",
-            domain: None, key: None,
+            domain: None,
+            key: None,
             label: Some("devicelink"),
-            service: None, include_escrow_bag: None,
+            service: None,
+            include_escrow_bag: None,
         };
         send_plist(&mut self.stream, &req)?;
         let resp = self.expect_response()?;
@@ -369,7 +408,8 @@ impl LockdownSession {
     pub fn start_service(&mut self, name: &str) -> Result<ServiceInfo, Error> {
         let req = Request {
             request: "StartService",
-            domain: None, key: None,
+            domain: None,
+            key: None,
             label: Some("devicelink"),
             service: Some(name),
             include_escrow_bag: None,
@@ -391,12 +431,26 @@ impl LockdownSession {
     pub fn query_type(&mut self) -> Result<String, Error> {
         #[derive(Serialize)]
         #[serde(rename_all = "PascalCase")]
-        struct Q { request: &'static str }
-        send_plist(&mut self.stream, &Q { request: "QueryType" })?;
+        struct Q {
+            request: &'static str,
+        }
+        send_plist(
+            &mut self.stream,
+            &Q {
+                request: "QueryType",
+            },
+        )?;
         let val = recv_plist(&mut self.stream)?;
         match val {
-            Value::Dictionary(d) => d.get("Type")
-                .and_then(|v| if let Value::String(s) = v { Some(s.clone()) } else { None })
+            Value::Dictionary(d) => d
+                .get("Type")
+                .and_then(|v| {
+                    if let Value::String(s) = v {
+                        Some(s.clone())
+                    } else {
+                        None
+                    }
+                })
                 .ok_or_else(|| Error::Lockdown("QueryType: no Type field".into())),
             _ => Err(Error::Lockdown("QueryType: unexpected response".into())),
         }
@@ -405,7 +459,7 @@ impl LockdownSession {
     // ── internals ────────────────────────────────────────────────────────────
 
     fn expect_response(&mut self) -> Result<BaseResponse, Error> {
-        let val  = recv_plist(&mut self.stream)?;
+        let val = recv_plist(&mut self.stream)?;
         let resp: BaseResponse = plist::from_value(&val)
             .map_err(|e| Error::Lockdown(format!("response parse error: {e}")))?;
         if let Some(err) = &resp.error {
@@ -420,11 +474,14 @@ impl LockdownSession {
         let old = std::mem::replace(&mut self.stream, Stream::Upgrading);
         let plain = match old {
             Stream::Plain(s) => s,
-            other            => { self.stream = other; return Ok(()); } // already TLS
+            other => {
+                self.stream = other;
+                return Ok(());
+            } // already TLS
         };
 
-        let server_name = ServerName::try_from("localhost")
-            .map_err(|e| Error::Tls(e.to_string()))?;
+        let server_name =
+            ServerName::try_from("localhost").map_err(|e| Error::Tls(e.to_string()))?;
         let mut conn = ClientConnection::new(Arc::new(config), server_name)
             .map_err(|e| Error::Tls(e.to_string()))?;
         let mut sock = plain;
@@ -473,7 +530,9 @@ fn build_tls_config(pair: &PairRecord) -> Result<ClientConfig, Error> {
             .map_err(|e| Error::Tls(format!("cert parse: {e}")))?
     };
     if cert_chain.is_empty() {
-        return Err(Error::Tls("no certificate found in pair record HostCertificate".into()));
+        return Err(Error::Tls(
+            "no certificate found in pair record HostCertificate".into(),
+        ));
     }
 
     // Parse host private key (PEM RSA → DER)

@@ -1,8 +1,8 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
-use plist::Value;
 use ios_rs::tunnel::ConnectionMode;
+use plist::Value;
 
 use crate::cmd::open_session;
 use crate::cmd::output::{print_json, ActionResult, OutputMode};
@@ -13,19 +13,24 @@ struct DateInfo {
 }
 
 pub fn run(
-    udid:      Option<&str>,
-    timezone:  Option<&str>,
+    udid: Option<&str>,
+    timezone: Option<&str>,
     sync_time: bool,
-    mode:      ConnectionMode,
-    output:    OutputMode,
+    mode: ConnectionMode,
+    output: OutputMode,
 ) -> Result<()> {
     let mut session = open_session(udid, mode)?;
     let ld = session.lockdown();
 
     if timezone.is_none() && !sync_time {
         // Display current timezone
-        let tz = ld.get_value(None, "TimeZone").ok()
-            .and_then(|v| if let Value::String(s) = v { Some(s) } else { None });
+        let tz = ld.get_value(None, "TimeZone").ok().and_then(|v| {
+            if let Value::String(s) = v {
+                Some(s)
+            } else {
+                None
+            }
+        });
 
         if output.is_json() {
             return print_json(&DateInfo { timezone: tz });

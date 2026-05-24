@@ -34,7 +34,7 @@ impl std::fmt::Display for ActivePath {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ActivePath::Legacy => write!(f, "legacy (usbmux → lockdownd)"),
-            ActivePath::Rsd    => write!(f, "rsd (CDTunnel → RSD)"),
+            ActivePath::Rsd => write!(f, "rsd (CDTunnel → RSD)"),
         }
     }
 }
@@ -42,23 +42,29 @@ impl std::fmt::Display for ActivePath {
 enum Inner {
     Legacy(LockdownSession),
     /// Direct smoltcp tunnel (no daemon).
-    Rsd { tunnel: super::smoltcp_stack::SmoltcpTunnel, lockdown: LockdownSession },
+    Rsd {
+        tunnel: super::smoltcp_stack::SmoltcpTunnel,
+        lockdown: LockdownSession,
+    },
     /// All RSD service connections are proxied through the tunnel daemon.
-    Daemon { lockdown: LockdownSession, udid: String },
+    Daemon {
+        lockdown: LockdownSession,
+        udid: String,
+    },
 }
 
 /// A session with an iOS device using the best available path.
 pub struct DeviceSession {
-    pub device:      Device,
-    pub version:     IosVersion,
+    pub device: Device,
+    pub version: IosVersion,
     pub active_path: ActivePath,
-    inner:           Inner,
+    inner: Inner,
 }
 
 impl DeviceSession {
     /// Open a session for `device` using `mode` to select the path.
     pub fn open(device: Device, mode: ConnectionMode) -> Result<Self, Error> {
-        let env_mode  = ConnectionMode::from_env();
+        let env_mode = ConnectionMode::from_env();
         let effective = if env_mode == ConnectionMode::Legacy {
             ConnectionMode::Legacy
         } else if mode == ConnectionMode::Rsd {
@@ -91,11 +97,10 @@ impl DeviceSession {
 
             ConnectionMode::Auto => {
                 if version.supports_core_device_proxy() {
-                    let rsd = try_daemon_path(&device.serial, device.device_id)
-                        .or_else(|e| {
-                            eprintln!("daemon unavailable ({e}), trying direct RSD…");
-                            try_rsd(&device, version)
-                        });
+                    let rsd = try_daemon_path(&device.serial, device.device_id).or_else(|e| {
+                        eprintln!("daemon unavailable ({e}), trying direct RSD…");
+                        try_rsd(&device, version)
+                    });
                     match rsd {
                         Ok(result) => result,
                         Err(e) => {
@@ -115,14 +120,19 @@ impl DeviceSession {
             }
         };
 
-        Ok(DeviceSession { device, version, active_path, inner })
+        Ok(DeviceSession {
+            device,
+            version,
+            active_path,
+            inner,
+        })
     }
 
     /// Borrow the underlying `LockdownSession` (available on all paths).
     pub fn lockdown(&mut self) -> &mut LockdownSession {
         match &mut self.inner {
-            Inner::Legacy(s)             => s,
-            Inner::Rsd { lockdown, .. }  => lockdown,
+            Inner::Legacy(s) => s,
+            Inner::Rsd { lockdown, .. } => lockdown,
             Inner::Daemon { lockdown, .. } => lockdown,
         }
     }
@@ -131,7 +141,7 @@ impl DeviceSession {
     pub fn smoltcp_tunnel(&mut self) -> Option<&mut super::smoltcp_stack::SmoltcpTunnel> {
         match &mut self.inner {
             Inner::Rsd { tunnel, .. } => Some(tunnel),
-            _                         => None,
+            _ => None,
         }
     }
 
@@ -139,7 +149,7 @@ impl DeviceSession {
     pub fn smoltcp_tunnel_ref(&self) -> Option<&super::smoltcp_stack::SmoltcpTunnel> {
         match &self.inner {
             Inner::Rsd { tunnel, .. } => Some(tunnel),
-            _                         => None,
+            _ => None,
         }
     }
 
@@ -147,7 +157,10 @@ impl DeviceSession {
     ///
     /// Daemon path: delegates the connection (including RSDCheckin) to the daemon.
     /// Direct path: looks up port in RSD catalog, connects via smoltcp, does RSDCheckin.
-    pub fn connect_rsd_shim(&mut self, service_name: &str) -> Result<crate::usbmux::MuxSocket, Error> {
+    pub fn connect_rsd_shim(
+        &mut self,
+        service_name: &str,
+    ) -> Result<crate::usbmux::MuxSocket, Error> {
         if let Inner::Daemon { udid, .. } = &self.inner {
             let udid = udid.clone();
             let sock = daemon_connect_service(&udid, service_name)?;
@@ -158,11 +171,14 @@ impl DeviceSession {
         let port = {
             let rsd = self.connect_rsd()?;
             rsd.service(service_name)
-                .ok_or_else(|| Error::Protocol(format!("RSD service '{service_name}' not in catalog")))?
+                .ok_or_else(|| {
+                    Error::Protocol(format!("RSD service '{service_name}' not in catalog"))
+                })?
                 .port
         };
 
-        let tunnel = self.smoltcp_tunnel_ref()
+        let tunnel = self
+            .smoltcp_tunnel_ref()
             .ok_or_else(|| Error::Protocol("no CDTunnel available".into()))?;
         let server_addr = tunnel.params.server_addr;
         let mut stream = tunnel.connect(server_addr, port)?;
@@ -175,7 +191,8 @@ impl DeviceSession {
 <key>Request</key><string>RSDCheckin</string>\n\
 </dict></plist>\n";
         let len = checkin.len() as u32;
-        stream.write_all(&len.to_be_bytes())
+        stream
+            .write_all(&len.to_be_bytes())
             .and_then(|_| stream.write_all(checkin))
             .and_then(|_| stream.flush())
             .map_err(|e| Error::Protocol(format!("RSDCheckin write: {e}")))?;
@@ -189,8 +206,13 @@ impl DeviceSession {
             read_exact(&mut stream, &mut resp_body)
                 .map_err(|e| Error::Protocol(format!("RSDCheckin read body: {e}")))?;
             if let Ok(plist::Value::Dictionary(d)) = plist::from_bytes::<plist::Value>(&resp_body) {
-                let req = d.get("Request").and_then(|v| v.as_string()).unwrap_or_default();
-                if req == "StartService" { break; }
+                let req = d
+                    .get("Request")
+                    .and_then(|v| v.as_string())
+                    .unwrap_or_default();
+                if req == "StartService" {
+                    break;
+                }
             }
         }
 
@@ -205,9 +227,10 @@ impl DeviceSession {
     ///
     /// Daemon path: delegates port lookup and connection to the daemon.
     /// Direct path: looks up port in RSD catalog, connects via smoltcp.
-    pub fn connect_rsd_service(&mut self, service_name: &str)
-        -> Result<std::os::unix::net::UnixStream, Error>
-    {
+    pub fn connect_rsd_service(
+        &mut self,
+        service_name: &str,
+    ) -> Result<std::os::unix::net::UnixStream, Error> {
         if let Inner::Daemon { udid, .. } = &self.inner {
             let udid = udid.clone();
             return daemon_connect_service(&udid, service_name);
@@ -216,17 +239,22 @@ impl DeviceSession {
         let port = {
             let rsd = self.connect_rsd()?;
             rsd.service(service_name)
-                .ok_or_else(|| Error::Protocol(format!("RSD service '{service_name}' not in catalog")))?
+                .ok_or_else(|| {
+                    Error::Protocol(format!("RSD service '{service_name}' not in catalog"))
+                })?
                 .port
         };
 
-        let tunnel = self.smoltcp_tunnel_ref()
+        let tunnel = self
+            .smoltcp_tunnel_ref()
             .ok_or_else(|| Error::Protocol("no CDTunnel available".into()))?;
         let server_addr = tunnel.params.server_addr;
         tunnel.connect(server_addr, port)
     }
 
-    pub fn is_rsd(&self) -> bool { self.active_path == ActivePath::Rsd }
+    pub fn is_rsd(&self) -> bool {
+        self.active_path == ActivePath::Rsd
+    }
 
     /// Connect to the RSD service catalog.
     ///
@@ -240,9 +268,10 @@ impl DeviceSession {
                 .map_err(|e| Error::Protocol(format!("RSD via daemon: {e}")));
         }
 
-        let tunnel = self.smoltcp_tunnel()
+        let tunnel = self
+            .smoltcp_tunnel()
             .ok_or_else(|| Error::Protocol("RSD not available on legacy path".into()))?;
-        let server_addr     = tunnel.params.server_addr;
+        let server_addr = tunnel.params.server_addr;
         let server_rsd_port = tunnel.params.server_rsd_port;
         let stream = tunnel.connect(server_addr, server_rsd_port)?;
         crate::rsd::RsdClient::connect_stream(stream)
@@ -263,7 +292,13 @@ fn try_daemon_path(udid: &str, device_id: u32) -> Result<(Inner, ActivePath), Er
         wait_for_daemon()?;
     }
     let lockdown = open_legacy(device_id, udid)?;
-    Ok((Inner::Daemon { lockdown, udid: udid.to_owned() }, ActivePath::Rsd))
+    Ok((
+        Inner::Daemon {
+            lockdown,
+            udid: udid.to_owned(),
+        },
+        ActivePath::Rsd,
+    ))
 }
 
 fn daemon_is_running() -> bool {
@@ -271,8 +306,7 @@ fn daemon_is_running() -> bool {
 }
 
 fn spawn_daemon() -> Result<(), Error> {
-    let exe = std::env::current_exe()
-        .map_err(|e| Error::Protocol(format!("current_exe: {e}")))?;
+    let exe = std::env::current_exe().map_err(|e| Error::Protocol(format!("current_exe: {e}")))?;
     std::process::Command::new(&exe)
         .args(["tunnel", "daemon"])
         .stdin(std::process::Stdio::null())
@@ -291,7 +325,9 @@ fn wait_for_daemon() -> Result<(), Error> {
             return Ok(());
         }
         if Instant::now() >= deadline {
-            return Err(Error::Protocol("tunnel daemon did not start within 15 s".into()));
+            return Err(Error::Protocol(
+                "tunnel daemon did not start within 15 s".into(),
+            ));
         }
         std::thread::sleep(Duration::from_millis(200));
     }
@@ -300,25 +336,37 @@ fn wait_for_daemon() -> Result<(), Error> {
 /// Direct smoltcp tunnel (no daemon): CDTunnel → smoltcp stack.
 fn try_rsd(device: &Device, version: IosVersion) -> Result<(Inner, ActivePath), Error> {
     let tunnel = super::ios17::Ios17Tunnel::connect_via_lockdown_udid(
-        device.device_id, Some(&device.serial), version,
-    ).map_err(|e| Error::Protocol(format!("CDTunnel/RemotePairing failed: {e}")))?;
+        device.device_id,
+        Some(&device.serial),
+        version,
+    )
+    .map_err(|e| Error::Protocol(format!("CDTunnel/RemotePairing failed: {e}")))?;
 
     let lockdown = open_legacy(device.device_id, &device.serial)?;
-    Ok((Inner::Rsd { tunnel: tunnel.stack, lockdown }, ActivePath::Rsd))
+    Ok((
+        Inner::Rsd {
+            tunnel: tunnel.stack,
+            lockdown,
+        },
+        ActivePath::Rsd,
+    ))
 }
 
 // ── daemon IPC client ─────────────────────────────────────────────────────────
 
 /// Connect to the daemon and request a proxied connection to `service` for `udid`.
 /// On success returns a `UnixStream` that is a transparent byte pipe to the service.
-fn daemon_connect_service(udid: &str, service: &str) -> Result<std::os::unix::net::UnixStream, Error> {
+fn daemon_connect_service(
+    udid: &str,
+    service: &str,
+) -> Result<std::os::unix::net::UnixStream, Error> {
     use std::os::unix::net::UnixStream;
 
     let mut sock = UnixStream::connect(DAEMON_SOCKET)
         .map_err(|e| Error::Protocol(format!("daemon connect: {e}")))?;
 
     let mut req = plist::Dictionary::new();
-    req.insert("UDID".into(),    plist::Value::String(udid.into()));
+    req.insert("UDID".into(), plist::Value::String(udid.into()));
     req.insert("Service".into(), plist::Value::String(service.into()));
     let req = plist::Value::Dictionary(req);
 
@@ -340,25 +388,32 @@ fn daemon_connect_service(udid: &str, service: &str) -> Result<std::os::unix::ne
     let mut resp_body = vec![0u8; n];
     daemon_read_exact(&mut sock, &mut resp_body)?;
 
-    let resp: plist::Value = plist::from_bytes(&resp_body)
-        .map_err(|e| Error::Protocol(format!("daemon plist: {e}")))?;
-    let dict = resp.as_dictionary()
+    let resp: plist::Value =
+        plist::from_bytes(&resp_body).map_err(|e| Error::Protocol(format!("daemon plist: {e}")))?;
+    let dict = resp
+        .as_dictionary()
         .ok_or_else(|| Error::Protocol("daemon: response not a dict".into()))?;
 
     match dict.get("Status").and_then(|v| v.as_string()) {
         Some("Ok") => Ok(sock),
         Some("Error") => {
-            let msg = dict.get("Error").and_then(|v| v.as_string()).unwrap_or("unknown");
+            let msg = dict
+                .get("Error")
+                .and_then(|v| v.as_string())
+                .unwrap_or("unknown");
             Err(Error::Protocol(format!("daemon: {msg}")))
         }
-        _ => Err(Error::Protocol("daemon: unexpected status in response".into())),
+        _ => Err(Error::Protocol(
+            "daemon: unexpected status in response".into(),
+        )),
     }
 }
 
 fn daemon_read_exact(s: &mut std::os::unix::net::UnixStream, buf: &mut [u8]) -> Result<(), Error> {
     let mut done = 0;
     while done < buf.len() {
-        let n = s.read(&mut buf[done..])
+        let n = s
+            .read(&mut buf[done..])
             .map_err(|e| Error::Protocol(format!("daemon read: {e}")))?;
         if n == 0 {
             return Err(Error::Protocol("daemon: unexpected EOF".into()));
@@ -372,7 +427,12 @@ fn read_exact<R: Read>(r: &mut R, buf: &mut [u8]) -> std::io::Result<()> {
     let mut done = 0;
     while done < buf.len() {
         let n = r.read(&mut buf[done..])?;
-        if n == 0 { return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "eof")); }
+        if n == 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "eof",
+            ));
+        }
         done += n;
     }
     Ok(())

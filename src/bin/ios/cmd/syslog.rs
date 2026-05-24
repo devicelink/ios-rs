@@ -8,11 +8,11 @@ use crate::cmd::open_session;
 use crate::cmd::output::OutputMode;
 
 pub fn run(
-    udid:        Option<&str>,
-    mode:        ConnectionMode,
-    process:     Option<&str>,
-    filter:      Option<&str>,
-    output:      OutputMode,
+    udid: Option<&str>,
+    mode: ConnectionMode,
+    process: Option<&str>,
+    filter: Option<&str>,
+    output: OutputMode,
     output_file: Option<&str>,
 ) -> Result<()> {
     let mut session = open_session(udid, mode)?;
@@ -32,7 +32,7 @@ pub fn run(
     let mut stdout_out;
     let out: &mut dyn Write = if let Some(path) = output_file {
         file_out = std::io::BufWriter::new(
-            std::fs::File::create(path).with_context(|| format!("create {path}"))?
+            std::fs::File::create(path).with_context(|| format!("create {path}"))?,
         );
         &mut file_out
     } else {
@@ -40,15 +40,20 @@ pub fn run(
         &mut stdout_out
     };
 
-    client.stream(|entry| {
-        if !matches_filters(&entry, process, filter) {
-            return true;
-        }
-        let line = if json { to_json(&entry) } else { entry.raw.clone() };
-        let ok = writeln!(out, "{line}").and_then(|_| out.flush()).is_ok();
-        ok
-    })
-    .context("syslog stream")?;
+    client
+        .stream(|entry| {
+            if !matches_filters(&entry, process, filter) {
+                return true;
+            }
+            let line = if json {
+                to_json(&entry)
+            } else {
+                entry.raw.clone()
+            };
+            let ok = writeln!(out, "{line}").and_then(|_| out.flush()).is_ok();
+            ok
+        })
+        .context("syslog stream")?;
 
     Ok(())
 }
@@ -57,7 +62,11 @@ pub fn run(
 
 fn matches_filters(entry: &SyslogEntry, process: Option<&str>, filter: Option<&str>) -> bool {
     if let Some(proc_name) = process {
-        if !entry.process.to_lowercase().contains(&proc_name.to_lowercase()) {
+        if !entry
+            .process
+            .to_lowercase()
+            .contains(&proc_name.to_lowercase())
+        {
             return false;
         }
     }
@@ -72,10 +81,10 @@ fn matches_filters(entry: &SyslogEntry, process: Option<&str>, filter: Option<&s
 fn to_json(e: &SyslogEntry) -> String {
     format!(
         r#"{{"timestamp":{ts},"process":{proc},"level":{level},"message":{msg}}}"#,
-        ts    = json_str(&e.timestamp),
-        proc  = json_str(&e.process),
+        ts = json_str(&e.timestamp),
+        proc = json_str(&e.process),
         level = json_str(&e.level),
-        msg   = json_str(&e.message),
+        msg = json_str(&e.message),
     )
 }
 

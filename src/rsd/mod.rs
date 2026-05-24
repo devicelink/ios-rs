@@ -6,7 +6,6 @@ use crate::remotexpc::RemoteXpcConn;
 use crate::xpc::Value;
 use thiserror::Error;
 
-
 /// Hard-coded RSD port — the device always listens here for initial discovery.
 pub const RSD_PORT: u16 = 58783;
 
@@ -23,18 +22,18 @@ pub enum Error {
 /// Port + metadata for a single service in the RSD catalogue.
 #[derive(Debug, Clone)]
 pub struct ServiceEntry {
-    pub port:             u16,
-    pub uses_remote_xpc:  bool,
-    pub properties:       HashMap<String, Value>,
+    pub port: u16,
+    pub uses_remote_xpc: bool,
+    pub properties: HashMap<String, Value>,
 }
 
 /// Peer information returned by the RSD handshake.
 #[derive(Debug, Clone)]
 pub struct PeerInfo {
-    pub udid:            String,
-    pub product_type:    String,
-    pub os_version:      String,
-    pub build_version:   String,
+    pub udid: String,
+    pub product_type: String,
+    pub os_version: String,
+    pub build_version: String,
 }
 
 /// A live RSD connection.
@@ -44,9 +43,9 @@ pub struct PeerInfo {
 /// handshake (inside-tunnel RSD).
 pub struct RsdClient {
     #[allow(dead_code)] // kept alive to hold the TCP connection open
-    conn:      RemoteXpcConn,
+    conn: RemoteXpcConn,
     peer_info: PeerInfo,
-    services:  HashMap<String, ServiceEntry>,
+    services: HashMap<String, ServiceEntry>,
 }
 
 impl RsdClient {
@@ -62,16 +61,18 @@ impl RsdClient {
     #[cfg(unix)]
     pub fn connect_stream(stream: std::os::unix::net::UnixStream) -> Result<Self, Error> {
         use std::net::TcpListener;
-        let listener   = TcpListener::bind("127.0.0.1:0").map_err(crate::remotexpc::Error::Io)?;
+        let listener = TcpListener::bind("127.0.0.1:0").map_err(crate::remotexpc::Error::Io)?;
         let local_addr = listener.local_addr().map_err(crate::remotexpc::Error::Io)?;
 
         std::thread::spawn(move || {
-            let Ok((tcp, _)) = listener.accept() else { return };
+            let Ok((tcp, _)) = listener.accept() else {
+                return;
+            };
             // Two directions: unix→tcp and tcp→unix
-            let mut uni_r  = stream.try_clone().unwrap();
-            let mut uni_w  = stream;
-            let mut tcp_w  = tcp.try_clone().unwrap();
-            let mut tcp_r  = tcp;
+            let mut uni_r = stream.try_clone().unwrap();
+            let mut uni_w = stream;
+            let mut tcp_w = tcp.try_clone().unwrap();
+            let mut tcp_r = tcp;
             let t1 = std::thread::spawn(move || copy_half(&mut uni_r, &mut tcp_w));
             let t2 = std::thread::spawn(move || copy_half(&mut tcp_r, &mut uni_w));
             let _ = (t1.join(), t2.join());
@@ -89,15 +90,23 @@ impl RsdClient {
             let Some(body) = msg.body else { continue };
             match parse_handshake(&body) {
                 Ok(result) => break result,
-                Err(_)     => continue,
+                Err(_) => continue,
             }
         };
 
-        Ok(RsdClient { conn, peer_info, services })
+        Ok(RsdClient {
+            conn,
+            peer_info,
+            services,
+        })
     }
 
-    pub fn peer_info(&self) -> &PeerInfo { &self.peer_info }
-    pub fn services(&self) -> &HashMap<String, ServiceEntry> { &self.services }
+    pub fn peer_info(&self) -> &PeerInfo {
+        &self.peer_info
+    }
+    pub fn services(&self) -> &HashMap<String, ServiceEntry> {
+        &self.services
+    }
 
     /// Look up a service by name.
     pub fn service(&self, name: &str) -> Option<&ServiceEntry> {
@@ -130,17 +139,19 @@ impl RsdClient {
 // ── parse handshake ──────────────────────────────────────────────────────────
 
 fn parse_handshake(body: &Value) -> Result<(PeerInfo, HashMap<String, ServiceEntry>), Error> {
-    let dict = body.as_dict()
+    let dict = body
+        .as_dict()
         .ok_or_else(|| Error::Protocol("Handshake body not a dict".into()))?;
 
-    let props = dict.get("Properties")
+    let props = dict
+        .get("Properties")
         .and_then(|v| v.as_dict())
         .ok_or_else(|| Error::Protocol("no Properties in Handshake".into()))?;
 
     let peer_info = PeerInfo {
-        udid:          str_or(props, "UniqueDeviceID"),
-        product_type:  str_or(props, "ProductType"),
-        os_version:    str_or(props, "OSVersion"),
+        udid: str_or(props, "UniqueDeviceID"),
+        product_type: str_or(props, "ProductType"),
+        os_version: str_or(props, "OSVersion"),
         build_version: str_or(props, "BuildVersion"),
     };
 
@@ -163,24 +174,29 @@ fn parse_service_entry(val: &Value) -> Option<ServiceEntry> {
     let dict = val.as_dict()?;
 
     // Port may be a string ("58783") or an integer
-    let port = dict.get("Port")
-        .and_then(|v| match v {
-            Value::String(s) => s.parse::<u16>().ok(),
-            other            => other.as_u64().map(|n| n as u16),
-        })?;
+    let port = dict.get("Port").and_then(|v| match v {
+        Value::String(s) => s.parse::<u16>().ok(),
+        other => other.as_u64().map(|n| n as u16),
+    })?;
 
-    let uses_remote_xpc = dict.get("Properties")
+    let uses_remote_xpc = dict
+        .get("Properties")
         .and_then(|v| v.as_dict())
         .and_then(|d| d.get("UsesRemoteXPC"))
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    let properties = dict.get("Properties")
+    let properties = dict
+        .get("Properties")
         .and_then(|v| v.as_dict())
         .cloned()
         .unwrap_or_default();
 
-    Some(ServiceEntry { port, uses_remote_xpc, properties })
+    Some(ServiceEntry {
+        port,
+        uses_remote_xpc,
+        properties,
+    })
 }
 
 fn copy_half(src: &mut dyn Read, dst: &mut dyn Write) {
@@ -188,11 +204,18 @@ fn copy_half(src: &mut dyn Read, dst: &mut dyn Write) {
     loop {
         match src.read(&mut buf) {
             Ok(0) | Err(_) => break,
-            Ok(n) => if dst.write_all(&buf[..n]).is_err() { break },
+            Ok(n) => {
+                if dst.write_all(&buf[..n]).is_err() {
+                    break;
+                }
+            }
         }
     }
 }
 
 fn str_or(d: &HashMap<String, Value>, key: &str) -> String {
-    d.get(key).and_then(|v| v.as_str()).map(|s| s.to_owned()).unwrap_or_default()
+    d.get(key)
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_owned())
+        .unwrap_or_default()
 }

@@ -11,31 +11,31 @@ pub type ServiceFn = Arc<dyn Fn(&mut TcpStream) + Send + Sync + 'static>;
 /// A simulated iOS device.
 #[derive(Clone)]
 pub struct SimDevice {
-    pub serial:          String,
+    pub serial: String,
     pub connection_type: String,
-    pub product_id:      u16,
+    pub product_id: u16,
     /// Registered service handlers: (port, handler).
-    pub services:        Vec<(u16, ServiceFn)>,
+    pub services: Vec<(u16, ServiceFn)>,
 }
 
 impl SimDevice {
     /// A USB-connected device with the given UDID.
     pub fn usb(serial: impl Into<String>) -> Self {
         SimDevice {
-            serial:          serial.into(),
+            serial: serial.into(),
             connection_type: "USB".into(),
-            product_id:      0x12a8,
-            services:        Vec::new(),
+            product_id: 0x12a8,
+            services: Vec::new(),
         }
     }
 
     /// A Network-connected device.
     pub fn network(serial: impl Into<String>) -> Self {
         SimDevice {
-            serial:          serial.into(),
+            serial: serial.into(),
             connection_type: "Network".into(),
-            product_id:      0x12a8,
-            services:        Vec::new(),
+            product_id: 0x12a8,
+            services: Vec::new(),
         }
     }
 
@@ -81,7 +81,10 @@ impl UsbmuxSim {
             })
             .expect("sim: spawn");
 
-        UsbmuxSim { addr, _listener_thread: handle }
+        UsbmuxSim {
+            addr,
+            _listener_thread: handle,
+        }
     }
 
     /// The address clients should connect to.

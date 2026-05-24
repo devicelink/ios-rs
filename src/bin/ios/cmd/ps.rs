@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use anyhow::{Result, anyhow};
-use ios_rs::dtx::{DtxConn, AuxValue};
+use anyhow::{anyhow, Result};
+use ios_rs::dtx::{AuxValue, DtxConn};
 use ios_rs::tunnel::{ConnectionMode, DeviceSession};
 use plist::Value;
 
@@ -21,16 +21,36 @@ pub fn run(udid: Option<&str>, output: OutputMode) -> Result<()> {
         return print_json(&procs);
     }
 
-    let name_w = procs.iter().map(|p| p.name.len()).max().unwrap_or(10).clamp(10, 40);
-    println!("{:>6}  {:<name_w$}  Bundle ID / Type", "PID", "Name", name_w = name_w);
+    let name_w = procs
+        .iter()
+        .map(|p| p.name.len())
+        .max()
+        .unwrap_or(10)
+        .clamp(10, 40);
+    println!(
+        "{:>6}  {:<name_w$}  Bundle ID / Type",
+        "PID",
+        "Name",
+        name_w = name_w
+    );
     println!("{}", "-".repeat(6 + 2 + name_w + 2 + 20));
     for p in &procs {
         let bundle = if p.real_app_name.is_empty() {
-            if p.is_application { "app".into() } else { "daemon".into() }
+            if p.is_application {
+                "app".into()
+            } else {
+                "daemon".into()
+            }
         } else {
             p.real_app_name.clone()
         };
-        println!("{:>6}  {:<name_w$}  {}", p.pid, p.name, bundle, name_w = name_w);
+        println!(
+            "{:>6}  {:<name_w$}  {}",
+            p.pid,
+            p.name,
+            bundle,
+            name_w = name_w
+        );
     }
     println!("({} processes)", procs.len());
     Ok(())
@@ -40,8 +60,8 @@ pub fn run(udid: Option<&str>, output: OutputMode) -> Result<()> {
 
 #[derive(serde::Serialize)]
 pub struct ProcessInfo {
-    pub pid:           u64,
-    pub name:          String,
+    pub pid: u64,
+    pub name: String,
     pub real_app_name: String,
     pub is_application: bool,
 }
@@ -67,7 +87,9 @@ fn list_processes(session: &mut DeviceSession) -> Result<Vec<ProcessInfo>> {
         reply.aux.iter().find_map(|a| {
             if let AuxValue::Bytes(b) = a {
                 plist::from_bytes::<Value>(b).ok()
-            } else { None }
+            } else {
+                None
+            }
         })
     };
 
@@ -77,17 +99,36 @@ fn list_processes(session: &mut DeviceSession) -> Result<Vec<ProcessInfo>> {
 
 fn parse_process_list(v: &Value) -> Result<Vec<ProcessInfo>> {
     // Decode NSKeyedArchiver to get the array at $top.root
-    let arr = nska_root_array(v)
-        .ok_or_else(|| anyhow!("unexpected runningProcesses response shape"))?;
+    let arr =
+        nska_root_array(v).ok_or_else(|| anyhow!("unexpected runningProcesses response shape"))?;
 
     let mut out = Vec::with_capacity(arr.len());
     for item in arr {
         if let Value::Dictionary(d) = item {
-            let pid = d.get("pid").and_then(|v| v.as_unsigned_integer()).unwrap_or(0);
-            let name = d.get("name").and_then(|v| v.as_string()).unwrap_or("").to_string();
-            let real_app_name = d.get("realAppName").and_then(|v| v.as_string()).unwrap_or("").to_string();
-            let is_application = d.get("isApplication").and_then(|v| v.as_boolean()).unwrap_or(false);
-            out.push(ProcessInfo { pid, name, real_app_name, is_application });
+            let pid = d
+                .get("pid")
+                .and_then(|v| v.as_unsigned_integer())
+                .unwrap_or(0);
+            let name = d
+                .get("name")
+                .and_then(|v| v.as_string())
+                .unwrap_or("")
+                .to_string();
+            let real_app_name = d
+                .get("realAppName")
+                .and_then(|v| v.as_string())
+                .unwrap_or("")
+                .to_string();
+            let is_application = d
+                .get("isApplication")
+                .and_then(|v| v.as_boolean())
+                .unwrap_or(false);
+            out.push(ProcessInfo {
+                pid,
+                name,
+                real_app_name,
+                is_application,
+            });
         }
     }
     out.sort_by_key(|p| p.pid);
@@ -112,8 +153,16 @@ fn nska_decode_value(v: &Value, objects: &[Value]) -> Value {
             .unwrap_or(Value::String("$null".into())),
         Value::Dictionary(d) => {
             if d.contains_key("NS.keys") && d.contains_key("NS.objects") {
-                let keys = d.get("NS.keys").and_then(|v| v.as_array()).cloned().unwrap_or_default();
-                let vals = d.get("NS.objects").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+                let keys = d
+                    .get("NS.keys")
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                let vals = d
+                    .get("NS.objects")
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default();
                 let mut out = plist::Dictionary::new();
                 for (k, val) in keys.iter().zip(vals.iter()) {
                     let ks = match nska_decode_value(k, objects) {
@@ -135,7 +184,9 @@ fn nska_decode_value(v: &Value, objects: &[Value]) -> Value {
                 Value::Dictionary(out)
             }
         }
-        Value::Array(arr) => Value::Array(arr.iter().map(|i| nska_decode_value(i, objects)).collect()),
+        Value::Array(arr) => {
+            Value::Array(arr.iter().map(|i| nska_decode_value(i, objects)).collect())
+        }
         other => other.clone(),
     }
 }
@@ -146,7 +197,11 @@ fn nska_decode_array(root: &Value, objects: &[Value]) -> Vec<Value> {
         Value::Array(arr) => arr,
         // NSArray stored as dict with NS.objects
         Value::Dictionary(ref d) if d.contains_key("NS.objects") => {
-            let arr = d.get("NS.objects").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+            let arr = d
+                .get("NS.objects")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
             arr.iter().map(|i| nska_decode_value(i, objects)).collect()
         }
         _ => vec![],
@@ -157,6 +212,8 @@ fn connect_hub(session: &mut DeviceSession) -> Result<Arc<DtxConn>> {
     let stream = session
         .connect_rsd_service("com.apple.instruments.dtservicehub")
         .map_err(|e| anyhow!("dtservicehub (is Developer Mode enabled?): {e}"))?;
-    let stream_r = stream.try_clone().map_err(|e| anyhow!("stream clone: {e}"))?;
+    let stream_r = stream
+        .try_clone()
+        .map_err(|e| anyhow!("stream clone: {e}"))?;
     Ok(Arc::new(DtxConn::new(stream_r, stream)))
 }

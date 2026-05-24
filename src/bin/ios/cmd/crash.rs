@@ -21,13 +21,18 @@ struct CrashEntry {
 
 #[derive(serde::Serialize)]
 struct PullResult {
-    ok:   bool,
+    ok: bool,
     path: String,
 }
 
-fn afc(udid: Option<&str>, mode: ConnectionMode) -> Result<(ios_rs::tunnel::DeviceSession, AfcClient)> {
+fn afc(
+    udid: Option<&str>,
+    mode: ConnectionMode,
+) -> Result<(ios_rs::tunnel::DeviceSession, AfcClient)> {
     let mut session = open_session(udid, mode)?;
-    let stream = session.connect_rsd_shim(SHIM).context("connect crash report shim")?;
+    let stream = session
+        .connect_rsd_shim(SHIM)
+        .context("connect crash report shim")?;
     Ok((session, AfcClient::from_stream(stream)))
 }
 
@@ -40,15 +45,17 @@ pub fn ls(udid: Option<&str>, mode: ConnectionMode, long: bool, output: OutputMo
         let mut json_entries = Vec::new();
         for name in &entries {
             let path = format!("/{name}");
-            let size = client.get_file_info(&path).ok()
-                .and_then(|info| {
-                    if info.file_type == ios_rs::lockdown::services::FileType::Regular {
-                        Some(info.size)
-                    } else {
-                        None
-                    }
-                });
-            json_entries.push(CrashEntry { name: name.clone(), size });
+            let size = client.get_file_info(&path).ok().and_then(|info| {
+                if info.file_type == ios_rs::lockdown::services::FileType::Regular {
+                    Some(info.size)
+                } else {
+                    None
+                }
+            });
+            json_entries.push(CrashEntry {
+                name: name.clone(),
+                size,
+            });
         }
         return print_json(&json_entries);
     }
@@ -75,20 +82,25 @@ pub fn ls(udid: Option<&str>, mode: ConnectionMode, long: bool, output: OutputMo
 }
 
 pub fn pull(
-    udid:   Option<&str>,
-    mode:   ConnectionMode,
-    name:   &str,
-    local:  Option<&str>,
+    udid: Option<&str>,
+    mode: ConnectionMode,
+    name: &str,
+    local: Option<&str>,
     output: OutputMode,
 ) -> Result<()> {
     let (_session, mut client) = afc(udid, mode)?;
     let remote = format!("/{name}");
     let dest_str = local.unwrap_or(name);
     let dest = Path::new(dest_str);
-    client.pull_file(&remote, dest, |_, _| {}).with_context(|| format!("pull {name}"))?;
+    client
+        .pull_file(&remote, dest, |_, _| {})
+        .with_context(|| format!("pull {name}"))?;
 
     if output.is_json() {
-        return print_json(&PullResult { ok: true, path: dest_str.to_string() });
+        return print_json(&PullResult {
+            ok: true,
+            path: dest_str.to_string(),
+        });
     }
 
     eprintln!("→ {dest_str}");
@@ -98,7 +110,9 @@ pub fn pull(
 pub fn rm(udid: Option<&str>, mode: ConnectionMode, name: &str, output: OutputMode) -> Result<()> {
     let (_session, mut client) = afc(udid, mode)?;
     let remote = format!("/{name}");
-    client.remove_path(&remote).with_context(|| format!("rm {name}"))?;
+    client
+        .remove_path(&remote)
+        .with_context(|| format!("rm {name}"))?;
     if output.is_json() {
         print_json(&ActionResult::ok())?;
     }

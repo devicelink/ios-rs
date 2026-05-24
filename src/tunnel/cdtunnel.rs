@@ -17,13 +17,13 @@ const MAGIC: &[u8] = b"CDTunnel";
 struct ClientHandshake {
     #[serde(rename = "type")]
     kind: &'static str,
-    mtu:  u16,
+    mtu: u16,
 }
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct ServerHandshake {
-    pub server_address:  String,
+    pub server_address: String,
     #[serde(rename = "serverRSDPort")]
     pub server_rsd_port: u16,
     pub client_parameters: ClientParams,
@@ -33,16 +33,16 @@ pub struct ServerHandshake {
 #[serde(rename_all = "camelCase")]
 pub struct ClientParams {
     pub address: String,
-    pub mtu:     u16,
+    pub mtu: u16,
 }
 
 /// Fully resolved tunnel addressing and MTU after the handshake.
 #[derive(Debug, Clone)]
 pub struct TunnelParams {
-    pub client_addr:     Ipv6Addr,
-    pub server_addr:     Ipv6Addr,
+    pub client_addr: Ipv6Addr,
+    pub server_addr: Ipv6Addr,
     pub server_rsd_port: u16,
-    pub mtu:             u16,
+    pub mtu: u16,
 }
 
 /// A socket with CDTunnel framing, backed by a plain `TcpStream`.
@@ -86,9 +86,9 @@ impl CdTunnelConn {
 
     pub fn try_recv_ipv6_packet(&mut self) -> std::io::Result<Option<Vec<u8>>> {
         match self.recv_ipv6_packet() {
-            Ok(p)                                                 => Ok(Some(p)),
+            Ok(p) => Ok(Some(p)),
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => Ok(None),
-            Err(e) if e.kind() == std::io::ErrorKind::TimedOut   => Ok(None),
+            Err(e) if e.kind() == std::io::ErrorKind::TimedOut => Ok(None),
             Err(e) => Err(e),
         }
     }
@@ -97,15 +97,23 @@ impl CdTunnelConn {
 // ── shared framing helpers ────────────────────────────────────────────────────
 
 fn do_handshake<S: Read + Write>(stream: &mut S) -> Result<TunnelParams, Error> {
-    let req  = ClientHandshake { kind: "clientHandshakeRequest", mtu: 1280 };
+    let req = ClientHandshake {
+        kind: "clientHandshakeRequest",
+        mtu: 1280,
+    };
     send_frame(stream, &serde_json::to_vec(&req)?)?;
 
     let body = recv_frame(stream)?;
     let resp: ServerHandshake = serde_json::from_slice(&body)?;
 
-    let client_addr = resp.client_parameters.address.parse::<Ipv6Addr>()
+    let client_addr = resp
+        .client_parameters
+        .address
+        .parse::<Ipv6Addr>()
         .map_err(|e| Error::Protocol(format!("bad client IPv6: {e}")))?;
-    let server_addr = resp.server_address.parse::<Ipv6Addr>()
+    let server_addr = resp
+        .server_address
+        .parse::<Ipv6Addr>()
         .map_err(|e| Error::Protocol(format!("bad server IPv6: {e}")))?;
 
     Ok(TunnelParams {
