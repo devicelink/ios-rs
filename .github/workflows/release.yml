@@ -102,3 +102,5 @@ jobs:
 
       - name: Publish
         run: cargo publish --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
