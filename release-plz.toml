@@ -2,3 +2,5 @@
 # Don't create a GitHub release here — release.yml handles that after
 # building the cross-platform binaries.
 git_release_enable = false
+# Don't publish to crates.io — this repo ships binaries, not a library crate.
+publish = false
