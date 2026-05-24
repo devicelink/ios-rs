@@ -37,7 +37,12 @@ use ios_rs::tunnel::{ConnectionMode, DeviceSession};
 use ios_rs::usbmux::{Connection, Device};
 
 /// Resolve a device by UDID or pick the first connected one.
+///
+/// UDID resolution order: `--udid` flag → `IOS_UDID` env var → first connected device.
 pub fn resolve_device(udid: Option<&str>) -> Result<Device> {
+    let env_udid = std::env::var("IOS_UDID").ok();
+    let udid = udid.or(env_udid.as_deref());
+
     let mut conn = Connection::open()?;
     let devices = conn.list_devices()?;
     if devices.is_empty() {

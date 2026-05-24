@@ -6,8 +6,6 @@
 
 A Rust crate for interacting with iOS devices over USB via usbmuxd. Implements the full iOS 17+ connection stack from scratch — usbmux framing, lockdownd sessions, CDTunnel/RSD, RemoteXPC over HTTP/2, and a userspace IPv6 stack — without any Apple SDK dependency.
 
-Tested against an iPhone SE running iOS 18.7.1.
-
 ## Connection paths
 
 | iOS version | Path |
