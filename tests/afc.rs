@@ -23,12 +23,12 @@ use ios_rs::lockdown::services::afc::{
 #[test]
 fn nul_str_appends_zero() {
     let out = nul_str("hello");
-    assert_eq!(out, b"hello\0");
+    assert_eq!(out, b"hello\x00");
 }
 
 #[test]
 fn nul_str_empty() {
-    assert_eq!(nul_str(""), b"\0");
+    assert_eq!(nul_str(""), b"\x00");
 }
 
 #[test]
@@ -52,7 +52,7 @@ fn le_u64_short_buffer_returns_zero() {
 
 #[test]
 fn parse_nul_strings_basic() {
-    let data = b"DCIM\0Books\0Podcasts\0";
+    let data = b"DCIM\x00Books\x00Podcasts\x00";
     let out  = parse_nul_strings(data);
     assert_eq!(out, vec!["DCIM", "Books", "Podcasts"]);
 }
@@ -60,14 +60,14 @@ fn parse_nul_strings_basic() {
 #[test]
 fn parse_nul_strings_filters_empty() {
     // Double-NUL or trailing NUL must not produce empty strings
-    let data = b"foo\0\0bar\0";
+    let data = b"foo\x00\x00bar\x00";
     let out  = parse_nul_strings(data);
     assert_eq!(out, vec!["foo", "bar"]);
 }
 
 #[test]
 fn parse_kv_pairs_basic() {
-    let data = b"st_ifmt\0S_IFREG\0st_size\0123456\0";
+    let data = b"st_ifmt\x00S_IFREG\x00st_size\x00123456\x00";
     let map  = parse_kv_pairs(data);
     assert_eq!(map.get("st_ifmt").map(String::as_str), Some("S_IFREG"));
     assert_eq!(map.get("st_size").map(String::as_str), Some("123456"));
@@ -76,7 +76,7 @@ fn parse_kv_pairs_basic() {
 #[test]
 fn parse_kv_pairs_odd_count_ignored() {
     // Trailing key without value should be silently dropped
-    let data = b"st_ifmt\0S_IFDIR\0orphan\0";
+    let data = b"st_ifmt\x00S_IFDIR\x00orphan\x00";
     let map  = parse_kv_pairs(data);
     assert!(map.contains_key("st_ifmt"));
     assert!(!map.contains_key("orphan"));
@@ -86,7 +86,7 @@ fn parse_kv_pairs_odd_count_ignored() {
 
 #[test]
 fn file_info_parses_regular_file() {
-    let data = b"st_ifmt\0S_IFREG\0st_size\099\0st_mtime\01700000000000000000\0";
+    let data = b"st_ifmt\x00S_IFREG\x00st_size\x0099\x00st_mtime\x001700000000000000000\x00";
     let info = FileInfo::parse("photo.jpg", data);
     assert_eq!(info.name, "photo.jpg");
     assert!(matches!(info.file_type, FileType::Regular));
@@ -97,7 +97,7 @@ fn file_info_parses_regular_file() {
 
 #[test]
 fn file_info_parses_directory() {
-    let data = b"st_ifmt\0S_IFDIR\0st_size\00\0st_mtime\00\0";
+    let data = b"st_ifmt\x00S_IFDIR\x00st_size\x000\x00st_mtime\x000\x00";
     let info = FileInfo::parse("DCIM", data);
     assert!(matches!(info.file_type, FileType::Directory));
     assert_eq!(info.size, 0);
@@ -105,7 +105,7 @@ fn file_info_parses_directory() {
 
 #[test]
 fn file_info_parses_symlink_with_target() {
-    let data = b"st_ifmt\0S_IFLNK\0st_size\00\0st_mtime\00\0LinkTarget\0/private/var/mobile/Media\0";
+    let data = b"st_ifmt\x00S_IFLNK\x00st_size\x000\x00st_mtime\x000\x00LinkTarget\x00/private/var/mobile/Media\x00";
     let info = FileInfo::parse("Media", data);
     assert!(matches!(info.file_type, FileType::Symlink));
     assert_eq!(info.link_target.as_deref(), Some("/private/var/mobile/Media"));
@@ -113,7 +113,7 @@ fn file_info_parses_symlink_with_target() {
 
 #[test]
 fn file_info_unknown_type() {
-    let data = b"st_ifmt\0S_IFBLK\0st_size\00\0st_mtime\00\0";
+    let data = b"st_ifmt\x00S_IFBLK\x00st_size\x000\x00st_mtime\x000\x00";
     let info = FileInfo::parse("dev", data);
     assert!(matches!(info.file_type, FileType::Other));
 }
@@ -122,7 +122,7 @@ fn file_info_unknown_type() {
 
 #[test]
 fn device_info_parses_correctly() {
-    let data = b"Model\0D421AP\0FSTotalBytes\016000000000\0FSFreeBytes\08000000000\0FSBlockSize\04096\0";
+    let data = b"Model\x00D421AP\x00FSTotalBytes\x0016000000000\x00FSFreeBytes\x008000000000\x00FSBlockSize\x004096\x00";
     let dev  = AfcDeviceInfo::parse(data);
     assert_eq!(dev.model, "D421AP");
     assert_eq!(dev.total_bytes, 16_000_000_000);
