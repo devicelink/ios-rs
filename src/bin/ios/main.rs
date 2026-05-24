@@ -63,7 +63,7 @@ enum Cmd {
     Screenshot {
         /// Output file path (use - for stdout)
         #[arg(default_value = "screenshot.png")]
-        output: String,
+        path: String,
         #[arg(long)]
         udid: Option<String>,
     },
@@ -672,8 +672,8 @@ fn main() -> Result<()> {
         Cmd::Services { udid} => cmd::services::run(udid.as_deref(), mode, output),
         Cmd::Relay { port, listen, udid } => cmd::relay::run(udid.as_deref(), port, listen),
         Cmd::Watch            => cmd::watch::run(output),
-        Cmd::Screenshot { output: output_path, udid } =>
-            cmd::screenshot::run(udid.as_deref(), mode, &output_path, output),
+        Cmd::Screenshot { path, udid } =>
+            cmd::screenshot::run(udid.as_deref(), mode, &path, output),
         Cmd::Reboot   { udid } => cmd::diagnostics::reboot(udid.as_deref(), mode, output),
         Cmd::Shutdown { udid } => cmd::diagnostics::shutdown(udid.as_deref(), mode, output),
         Cmd::Diagnostics { action } => match action {
