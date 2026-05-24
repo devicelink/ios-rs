@@ -27,6 +27,7 @@ pub enum ActivePath {
     /// usbmux → lockdownd (all iOS versions)
     Legacy,
     /// iOS 17 CDTunnel → RSD (direct smoltcp or via daemon)
+    #[cfg(unix)]
     Rsd,
 }
 
@@ -34,6 +35,7 @@ impl std::fmt::Display for ActivePath {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ActivePath::Legacy => write!(f, "legacy (usbmux → lockdownd)"),
+            #[cfg(unix)]
             ActivePath::Rsd => write!(f, "rsd (CDTunnel → RSD)"),
         }
     }
@@ -42,11 +44,13 @@ impl std::fmt::Display for ActivePath {
 enum Inner {
     Legacy(LockdownSession),
     /// Direct smoltcp tunnel (no daemon).
+    #[cfg(unix)]
     Rsd {
         tunnel: super::smoltcp_stack::SmoltcpTunnel,
         lockdown: LockdownSession,
     },
     /// All RSD service connections are proxied through the tunnel daemon.
+    #[cfg(unix)]
     Daemon {
         lockdown: LockdownSession,
         udid: String,
@@ -81,39 +85,54 @@ impl DeviceSession {
             }
 
             ConnectionMode::Rsd => {
-                if !version.supports_core_device_proxy() {
-                    return Err(Error::Protocol(format!(
-                        "iOS {version} does not support RSD via CoreDeviceProxy (requires iOS 17.4+)"
-                    )));
+                #[cfg(unix)]
+                {
+                    if !version.supports_core_device_proxy() {
+                        return Err(Error::Protocol(format!(
+                            "iOS {version} does not support RSD via CoreDeviceProxy (requires iOS 17.4+)"
+                        )));
+                    }
+                    // Try daemon, fall back to direct smoltcp tunnel.
+                    try_daemon_path(&device.serial, device.device_id)
+                        .or_else(|e| {
+                            eprintln!("daemon unavailable ({e}), trying direct RSD…");
+                            try_rsd(&device, version)
+                        })
+                        .map_err(|e| Error::Protocol(format!("RSD mode forced but failed: {e}")))?
                 }
-                // Try daemon, fall back to direct smoltcp tunnel.
-                try_daemon_path(&device.serial, device.device_id)
-                    .or_else(|e| {
-                        eprintln!("daemon unavailable ({e}), trying direct RSD…");
-                        try_rsd(&device, version)
-                    })
-                    .map_err(|e| Error::Protocol(format!("RSD mode forced but failed: {e}")))?
+                #[cfg(not(unix))]
+                {
+                    return Err(Error::Protocol("RSD not supported on Windows".into()));
+                }
             }
 
             ConnectionMode::Auto => {
-                if version.supports_core_device_proxy() {
-                    let rsd = try_daemon_path(&device.serial, device.device_id).or_else(|e| {
-                        eprintln!("daemon unavailable ({e}), trying direct RSD…");
-                        try_rsd(&device, version)
-                    });
-                    match rsd {
-                        Ok(result) => result,
-                        Err(e) => {
-                            eprintln!(
-                                "RSD path unavailable for {} (iOS {version}): {e}\n\
-                                 → falling back to legacy lockdownd",
-                                device.serial
-                            );
-                            let s = open_legacy(device.device_id, &device.serial)?;
-                            (Inner::Legacy(s), ActivePath::Legacy)
+                #[cfg(unix)]
+                {
+                    if version.supports_core_device_proxy() {
+                        let rsd = try_daemon_path(&device.serial, device.device_id).or_else(|e| {
+                            eprintln!("daemon unavailable ({e}), trying direct RSD…");
+                            try_rsd(&device, version)
+                        });
+                        match rsd {
+                            Ok(result) => result,
+                            Err(e) => {
+                                eprintln!(
+                                    "RSD path unavailable for {} (iOS {version}): {e}\n\
+                                     → falling back to legacy lockdownd",
+                                    device.serial
+                                );
+                                let s = open_legacy(device.device_id, &device.serial)?;
+                                (Inner::Legacy(s), ActivePath::Legacy)
+                            }
                         }
+                    } else {
+                        let s = open_legacy(device.device_id, &device.serial)?;
+                        (Inner::Legacy(s), ActivePath::Legacy)
                     }
-                } else {
+                }
+                #[cfg(not(unix))]
+                {
                     let s = open_legacy(device.device_id, &device.serial)?;
                     (Inner::Legacy(s), ActivePath::Legacy)
                 }
@@ -132,12 +151,15 @@ impl DeviceSession {
     pub fn lockdown(&mut self) -> &mut LockdownSession {
         match &mut self.inner {
             Inner::Legacy(s) => s,
+            #[cfg(unix)]
             Inner::Rsd { lockdown, .. } => lockdown,
+            #[cfg(unix)]
             Inner::Daemon { lockdown, .. } => lockdown,
         }
     }
 
     /// Access the smoltcp tunnel (only available on the direct RSD path, not daemon).
+    #[cfg(unix)]
     pub fn smoltcp_tunnel(&mut self) -> Option<&mut super::smoltcp_stack::SmoltcpTunnel> {
         match &mut self.inner {
             Inner::Rsd { tunnel, .. } => Some(tunnel),
@@ -146,6 +168,7 @@ impl DeviceSession {
     }
 
     /// Shared reference to the smoltcp tunnel.
+    #[cfg(unix)]
     pub fn smoltcp_tunnel_ref(&self) -> Option<&super::smoltcp_stack::SmoltcpTunnel> {
         match &self.inner {
             Inner::Rsd { tunnel, .. } => Some(tunnel),
@@ -157,6 +180,7 @@ impl DeviceSession {
     ///
     /// Daemon path: delegates the connection (including RSDCheckin) to the daemon.
     /// Direct path: looks up port in RSD catalog, connects via smoltcp, does RSDCheckin.
+    #[cfg(unix)]
     pub fn connect_rsd_shim(
         &mut self,
         service_name: &str,
@@ -227,6 +251,7 @@ impl DeviceSession {
     ///
     /// Daemon path: delegates port lookup and connection to the daemon.
     /// Direct path: looks up port in RSD catalog, connects via smoltcp.
+    #[cfg(unix)]
     pub fn connect_rsd_service(
         &mut self,
         service_name: &str,
@@ -253,13 +278,21 @@ impl DeviceSession {
     }
 
     pub fn is_rsd(&self) -> bool {
-        self.active_path == ActivePath::Rsd
+        #[cfg(unix)]
+        {
+            self.active_path == ActivePath::Rsd
+        }
+        #[cfg(not(unix))]
+        {
+            false
+        }
     }
 
     /// Connect to the RSD service catalog.
     ///
     /// Daemon path: asks the daemon to proxy the RSD port, does RemoteXPC + handshake locally.
     /// Direct path: connects smoltcp TCP to the RSD port.
+    #[cfg(unix)]
     pub fn connect_rsd(&mut self) -> Result<crate::rsd::RsdClient, Error> {
         if let Inner::Daemon { udid, .. } = &self.inner {
             let udid = udid.clone();
@@ -286,6 +319,7 @@ fn open_legacy(device_id: u32, serial: &str) -> Result<LockdownSession, Error> {
 }
 
 /// Try to use the tunnel daemon (spawning it if not running).
+#[cfg(unix)]
 fn try_daemon_path(udid: &str, device_id: u32) -> Result<(Inner, ActivePath), Error> {
     if !daemon_is_running() {
         spawn_daemon()?;
@@ -301,10 +335,12 @@ fn try_daemon_path(udid: &str, device_id: u32) -> Result<(Inner, ActivePath), Er
     ))
 }
 
+#[cfg(unix)]
 fn daemon_is_running() -> bool {
     std::os::unix::net::UnixStream::connect(DAEMON_SOCKET).is_ok()
 }
 
+#[cfg(unix)]
 fn spawn_daemon() -> Result<(), Error> {
     let exe = std::env::current_exe().map_err(|e| Error::Protocol(format!("current_exe: {e}")))?;
     std::process::Command::new(&exe)
@@ -317,6 +353,7 @@ fn spawn_daemon() -> Result<(), Error> {
     Ok(())
 }
 
+#[cfg(unix)]
 fn wait_for_daemon() -> Result<(), Error> {
     use std::time::{Duration, Instant};
     let deadline = Instant::now() + std::time::Duration::from_secs(15);
@@ -334,6 +371,7 @@ fn wait_for_daemon() -> Result<(), Error> {
 }
 
 /// Direct smoltcp tunnel (no daemon): CDTunnel → smoltcp stack.
+#[cfg(unix)]
 fn try_rsd(device: &Device, version: IosVersion) -> Result<(Inner, ActivePath), Error> {
     let tunnel = super::ios17::Ios17Tunnel::connect_via_lockdown_udid(
         device.device_id,
@@ -356,6 +394,7 @@ fn try_rsd(device: &Device, version: IosVersion) -> Result<(Inner, ActivePath), 
 
 /// Connect to the daemon and request a proxied connection to `service` for `udid`.
 /// On success returns a `UnixStream` that is a transparent byte pipe to the service.
+#[cfg(unix)]
 fn daemon_connect_service(
     udid: &str,
     service: &str,
@@ -409,6 +448,7 @@ fn daemon_connect_service(
     }
 }
 
+#[cfg(unix)]
 fn daemon_read_exact(s: &mut std::os::unix::net::UnixStream, buf: &mut [u8]) -> Result<(), Error> {
     let mut done = 0;
     while done < buf.len() {

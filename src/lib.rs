@@ -7,6 +7,6 @@ pub mod rsd;
 #[cfg(feature = "tunnel")]
 pub mod tunnel;
 pub mod usbmux;
-#[cfg(feature = "xctest")]
+#[cfg(all(feature = "xctest", unix))]
 pub mod xctest;
 pub mod xpc;

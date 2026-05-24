@@ -543,6 +543,7 @@ fn open_dtx(
 
 /// Create a loopback TCP relay for a UnixStream (same pattern as RsdClient::connect_stream).
 /// Returns (TcpStream for reading, TcpStream for writing).
+#[cfg(unix)]
 fn unix_to_tcp_pair(
     unix: std::os::unix::net::UnixStream,
 ) -> std::io::Result<(TcpStream, TcpStream)> {
@@ -572,6 +573,7 @@ fn unix_to_tcp_pair(
 
 /// Open a loopback TCP relay, read the 16-byte UUID the openstdio service sends,
 /// and return (TcpStream for reading stdio, UUID bytes).
+#[cfg(unix)]
 fn unix_to_tcp_relay_read_uuid(
     unix: std::os::unix::net::UnixStream,
 ) -> std::io::Result<(TcpStream, [u8; 16])> {
