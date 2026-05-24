@@ -12,9 +12,9 @@
 //! ```
 use std::io::{Read, Write};
 
-use plist::Value;
 use crate::lockdown::{Error, LockdownSession};
 use crate::usbmux::MuxSocket;
+use plist::Value;
 
 const SERVICE: &str = "com.apple.mobile.diagnostics_relay";
 
@@ -24,18 +24,18 @@ const SERVICE: &str = "com.apple.mobile.diagnostics_relay";
 #[derive(Debug, Clone)]
 pub struct BatteryInfo {
     /// State of charge as a percentage (0–100).
-    pub capacity_pct:     u64,
+    pub capacity_pct: u64,
     /// Voltage in millivolts.
-    pub voltage_mv:       u64,
+    pub voltage_mv: u64,
     /// Number of charge cycles.
-    pub cycle_count:      u64,
+    pub cycle_count: u64,
     /// Design capacity in mAh.
-    pub design_capacity:  u64,
+    pub design_capacity: u64,
     /// Full charge capacity in mAh.
-    pub full_capacity:    u64,
-    pub is_charging:      bool,
+    pub full_capacity: u64,
+    pub is_charging: bool,
     pub external_connected: bool,
-    pub fully_charged:    bool,
+    pub fully_charged: bool,
 }
 
 // ── client ────────────────────────────────────────────────────────────────────
@@ -47,7 +47,9 @@ pub struct DiagnosticsClient {
 impl DiagnosticsClient {
     /// Connect via lockdownd.
     pub fn connect(session: &mut LockdownSession) -> Result<Self, Error> {
-        Ok(DiagnosticsClient { stream: session.connect_service(SERVICE)? })
+        Ok(DiagnosticsClient {
+            stream: session.connect_service(SERVICE)?,
+        })
     }
 
     /// Build from a pre-connected stream (e.g. RSD shim).
@@ -82,19 +84,20 @@ impl DiagnosticsClient {
     /// Return battery / gas-gauge information.
     pub fn battery(&mut self) -> Result<BatteryInfo, Error> {
         let diag = self.query("GasGauge")?;
-        let gg = diag.get("GasGauge")
+        let gg = diag
+            .get("GasGauge")
             .and_then(|v| v.as_dictionary())
             .ok_or_else(|| Error::Afc("diagnostics: no GasGauge in response".into()))?;
 
         Ok(BatteryInfo {
-            capacity_pct:      gg_u64(gg, "BatteryCurrentCapacity"),
-            voltage_mv:        gg_u64(gg, "BatteryVoltage"),
-            cycle_count:       gg_u64(gg, "CycleCount"),
-            design_capacity:   gg_u64(gg, "DesignCapacity"),
-            full_capacity:     gg_u64(gg, "FullChargeCapacity"),
-            is_charging:       gg_bool(gg, "BatteryIsCharging"),
+            capacity_pct: gg_u64(gg, "BatteryCurrentCapacity"),
+            voltage_mv: gg_u64(gg, "BatteryVoltage"),
+            cycle_count: gg_u64(gg, "CycleCount"),
+            design_capacity: gg_u64(gg, "DesignCapacity"),
+            full_capacity: gg_u64(gg, "FullChargeCapacity"),
+            is_charging: gg_bool(gg, "BatteryIsCharging"),
             external_connected: gg_bool(gg, "ExternalConnected"),
-            fully_charged:     gg_bool(gg, "FullyCharged"),
+            fully_charged: gg_bool(gg, "FullyCharged"),
         })
     }
 
@@ -106,7 +109,8 @@ impl DiagnosticsClient {
         d.insert("Request".into(), Value::String(req.into()));
         self.send(&Value::Dictionary(d))?;
         let resp = self.recv()?;
-        let status = resp.as_dictionary()
+        let status = resp
+            .as_dictionary()
             .and_then(|d| d.get("Status"))
             .and_then(|v| v.as_string())
             .unwrap_or("");
@@ -122,7 +126,8 @@ impl DiagnosticsClient {
         d.insert("Request".into(), Value::String(req.into()));
         self.send(&Value::Dictionary(d))?;
         let resp = self.recv()?;
-        if let Some(err) = resp.as_dictionary()
+        if let Some(err) = resp
+            .as_dictionary()
             .and_then(|d| d.get("Error"))
             .and_then(|v| v.as_string())
         {
@@ -162,7 +167,10 @@ impl DiagnosticsClient {
 
 fn gg_u64(d: &plist::Dictionary, key: &str) -> u64 {
     d.get(key)
-        .and_then(|v| v.as_unsigned_integer().or_else(|| v.as_signed_integer().map(|i| i as u64)))
+        .and_then(|v| {
+            v.as_unsigned_integer()
+                .or_else(|| v.as_signed_integer().map(|i| i as u64))
+        })
         .unwrap_or(0)
 }
 
@@ -174,7 +182,9 @@ fn read_exact(s: &mut MuxSocket, buf: &mut [u8]) -> Result<(), Error> {
     let mut done = 0;
     while done < buf.len() {
         let n = s.read(&mut buf[done..])?;
-        if n == 0 { return Err(Error::Closed); }
+        if n == 0 {
+            return Err(Error::Closed);
+        }
         done += n;
     }
     Ok(())

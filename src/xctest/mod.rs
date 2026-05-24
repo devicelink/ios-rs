@@ -32,10 +32,10 @@ fn skeleton(objects: Vec<Value>, root: Uid) -> Value {
     let mut top = Dictionary::new();
     top.insert("root".into(), Value::Uid(root));
     let mut d = Dictionary::new();
-    d.insert("$version".into(),  Value::Integer(100000.into()));
+    d.insert("$version".into(), Value::Integer(100000.into()));
     d.insert("$archiver".into(), Value::String("NSKeyedArchiver".into()));
-    d.insert("$top".into(),      Value::Dictionary(top));
-    d.insert("$objects".into(),  Value::Array(objects));
+    d.insert("$top".into(), Value::Dictionary(top));
+    d.insert("$objects".into(), Value::Array(objects));
     Value::Dictionary(d)
 }
 
@@ -50,7 +50,7 @@ fn class_dict(classname: &str, superclasses: &[&str]) -> Value {
     classes.extend(superclasses.iter().map(|s| Value::String((*s).into())));
     let mut d = Dictionary::new();
     d.insert("$classname".into(), Value::String(classname.into()));
-    d.insert("$classes".into(),   Value::Array(classes));
+    d.insert("$classes".into(), Value::Array(classes));
     Value::Dictionary(d)
 }
 
@@ -68,15 +68,15 @@ pub fn archive_uuid(bytes: &[u8; 16]) -> Vec<u8> {
 
 pub fn archive_url(url: &str) -> Vec<u8> {
     let mut objects = vec![Value::String("$null".into())];
-    let class_idx   = Uid::new(objects.len() as u64);
+    let class_idx = Uid::new(objects.len() as u64);
     objects.push(class_dict("NSURL", &["NSObject"]));
-    let str_idx     = Uid::new(objects.len() as u64);
+    let str_idx = Uid::new(objects.len() as u64);
     objects.push(Value::String(url.into()));
-    let obj_idx     = Uid::new(objects.len() as u64);
+    let obj_idx = Uid::new(objects.len() as u64);
     let mut d = Dictionary::new();
-    d.insert("NS.base".into(),     Value::Uid(Uid::new(0)));
+    d.insert("NS.base".into(), Value::Uid(Uid::new(0)));
     d.insert("NS.relative".into(), Value::Uid(str_idx));
-    d.insert("$class".into(),      Value::Uid(class_idx));
+    d.insert("$class".into(), Value::Uid(class_idx));
     objects.push(Value::Dictionary(d));
     to_bin(skeleton(objects, obj_idx))
 }
@@ -106,9 +106,15 @@ pub fn archive_xct_capabilities(caps: &HashMap<&str, Value>) -> Vec<u8> {
     // NSDictionary object
     let nsdict_uid = Uid::new(objects.len() as u64);
     let mut nd = Dictionary::new();
-    nd.insert("NS.keys".into(),    Value::Array(key_uids.iter().map(|u| Value::Uid(*u)).collect()));
-    nd.insert("NS.objects".into(), Value::Array(val_uids.iter().map(|u| Value::Uid(*u)).collect()));
-    nd.insert("$class".into(),     Value::Uid(nsdict_class));
+    nd.insert(
+        "NS.keys".into(),
+        Value::Array(key_uids.iter().map(|u| Value::Uid(*u)).collect()),
+    );
+    nd.insert(
+        "NS.objects".into(),
+        Value::Array(val_uids.iter().map(|u| Value::Uid(*u)).collect()),
+    );
+    nd.insert("$class".into(), Value::Uid(nsdict_class));
     objects.push(Value::Dictionary(nd));
 
     // XCTCapabilities object
@@ -129,24 +135,24 @@ pub use config::build_xctest_configuration_bytes;
 
 #[derive(Debug, Clone)]
 pub struct TestResult {
-    pub bundle:  String,
-    pub class:   String,
-    pub method:  String,
-    pub passed:  bool,
+    pub bundle: String,
+    pub class: String,
+    pub method: String,
+    pub passed: bool,
     pub message: String,
 }
 
 /// Configuration for a test run.
 pub struct RunConfig<'a> {
-    pub bundle_id:              &'a str,
-    pub bundle_path:            &'a str,  // filesystem path of target app (needed for launch)
-    pub test_runner_bundle_id:  &'a str,
-    pub xctest_config_name:     &'a str,
-    pub tests_to_run:           &'a [String],
-    pub tests_to_skip:          &'a [String],
-    pub is_xctest:              bool,  // true = unit test (adds BundleInject dylib)
-    pub initialize_for_ui:      bool,  // false = skip foreground app takeover
-    pub extra_env:              HashMap<String, String>,
+    pub bundle_id: &'a str,
+    pub bundle_path: &'a str, // filesystem path of target app (needed for launch)
+    pub test_runner_bundle_id: &'a str,
+    pub xctest_config_name: &'a str,
+    pub tests_to_run: &'a [String],
+    pub tests_to_skip: &'a [String],
+    pub is_xctest: bool,         // true = unit test (adds BundleInject dylib)
+    pub initialize_for_ui: bool, // false = skip foreground app takeover
+    pub extra_env: HashMap<String, String>,
 }
 
 /// Run XCTests on an iOS 17.4+ device.
@@ -154,40 +160,52 @@ pub struct RunConfig<'a> {
 /// Mirrors go-ios `runXUITestWithBundleIdsXcode15Ctx`.
 /// Returns `Ok(passed)`.
 pub fn run(
-    tunnel:      &SmoltcpTunnel,
-    rsd:         &crate::rsd::RsdClient,
+    tunnel: &SmoltcpTunnel,
+    rsd: &crate::rsd::RsdClient,
     app_bundles: &HashMap<String, crate::rsd::ServiceEntry>,
-    config:      &RunConfig<'_>,
-    log_out:     &mut dyn Write,
+    config: &RunConfig<'_>,
+    log_out: &mut dyn Write,
 ) -> Result<bool, crate::tunnel::Error> {
     use crate::tunnel::Error;
     let err = |s: String| Error::Protocol(s);
 
     // ── 1. Get service ports ────────────────────────────────────────────────
-    let tm_port = rsd.service("com.apple.dt.testmanagerd.remote")
+    let tm_port = rsd
+        .service("com.apple.dt.testmanagerd.remote")
         .ok_or_else(|| err("testmanagerd.remote not in RSD catalog".into()))?
         .port;
-    let app_svc_port = rsd.service("com.apple.coredevice.appservice")
+    let app_svc_port = rsd
+        .service("com.apple.coredevice.appservice")
         .ok_or_else(|| err("coredevice.appservice not in RSD catalog".into()))?
         .port;
-    let stdio_port = rsd.service("com.apple.coredevice.openstdiosocket")
+    let stdio_port = rsd
+        .service("com.apple.coredevice.openstdiosocket")
         .ok_or_else(|| err("coredevice.openstdiosocket not in RSD catalog".into()))?
         .port;
 
     // Look up the test runner app path from the installed-apps map
-    let runner_info = app_bundles.get(config.test_runner_bundle_id)
-        .ok_or_else(|| err(format!("test runner '{}' not installed", config.test_runner_bundle_id)))?;
-    let runner_path = runner_info.properties.get("Path")
+    let runner_info = app_bundles
+        .get(config.test_runner_bundle_id)
+        .ok_or_else(|| {
+            err(format!(
+                "test runner '{}' not installed",
+                config.test_runner_bundle_id
+            ))
+        })?;
+    let runner_path = runner_info
+        .properties
+        .get("Path")
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
 
     // ── 2. Open stdio socket (captures test runner stdout/stderr) ───────────
     let server_addr = tunnel.params.server_addr;
-    let stdio_stream = tunnel.connect(server_addr, stdio_port)
+    let stdio_stream = tunnel
+        .connect(server_addr, stdio_port)
         .map_err(|e| err(format!("openstdiosocket: {e}")))?;
-    let (stdio_tcp, stdio_uuid) = unix_to_tcp_relay_read_uuid(stdio_stream)
-        .map_err(|e| err(format!("stdio relay: {e}")))?;
+    let (stdio_tcp, stdio_uuid) =
+        unix_to_tcp_relay_read_uuid(stdio_stream).map_err(|e| err(format!("stdio relay: {e}")))?;
 
     // Spawn thread to copy stdio → log_out (we use a channel to forward)
     let (stdio_tx, stdio_rx) = mpsc::sync_channel::<Vec<u8>>(64);
@@ -197,27 +215,38 @@ pub fn run(
         loop {
             match tcp.read(&mut buf) {
                 Ok(0) | Err(_) => break,
-                Ok(n) => { let _ = stdio_tx.send(buf[..n].to_vec()); }
+                Ok(n) => {
+                    let _ = stdio_tx.send(buf[..n].to_vec());
+                }
             }
         }
     });
 
     // ── 3. Open two DTX connections to testmanagerd ─────────────────────────
-    let conn1 = Arc::new(open_dtx(tunnel, server_addr, tm_port)
-        .map_err(|e| err(format!("testmanagerd conn1: {e}")))?);
-    let conn2 = Arc::new(open_dtx(tunnel, server_addr, tm_port)
-        .map_err(|e| err(format!("testmanagerd conn2: {e}")))?);
+    let conn1 = Arc::new(
+        open_dtx(tunnel, server_addr, tm_port)
+            .map_err(|e| err(format!("testmanagerd conn1: {e}")))?,
+    );
+    let conn2 = Arc::new(
+        open_dtx(tunnel, server_addr, tm_port)
+            .map_err(|e| err(format!("testmanagerd conn2: {e}")))?,
+    );
 
     let chan_name = "dtxproxy:XCTestManager_IDEInterface:XCTestManager_DaemonConnectionInterface";
 
     // ── 4. conn1 + conn2: capability handshake (required by testmanagerd) ───
     // testmanagerd ignores _requestChannelWithCode:identifier: until the host
     // sends _notifyOfPublishedCapabilities: — both pymd3 and go-ios do this.
-    conn1.handshake().map_err(|e| err(format!("conn1 handshake: {e}")))?;
-    conn2.handshake().map_err(|e| err(format!("conn2 handshake: {e}")))?;
+    conn1
+        .handshake()
+        .map_err(|e| err(format!("conn1 handshake: {e}")))?;
+    conn2
+        .handshake()
+        .map_err(|e| err(format!("conn2 handshake: {e}")))?;
 
     // ── 5. conn1: request IDE channel + initiate session ────────────────────
-    let ide_chan1 = conn1.request_channel(chan_name)
+    let ide_chan1 = conn1
+        .request_channel(chan_name)
         .map_err(|e| err(format!("request channel conn1: {e}")))?;
 
     // Register to receive incoming calls on ide_chan1 (test runner will call us back)
@@ -243,12 +272,16 @@ pub fn run(
         ("ubiquitous test identifiers", true),
     ]);
 
-    conn1.call(ide_chan1, "_IDE_initiateSessionWithIdentifier:capabilities:",
-        &[
-            AuxValue::Bytes(archive_uuid(&session_id)),
-            AuxValue::Bytes(archive_xct_capabilities(&local_caps)),
-        ])
-    .map_err(|e| err(format!("initiateSession: {e}")))?;
+    conn1
+        .call(
+            ide_chan1,
+            "_IDE_initiateSessionWithIdentifier:capabilities:",
+            &[
+                AuxValue::Bytes(archive_uuid(&session_id)),
+                AuxValue::Bytes(archive_xct_capabilities(&local_caps)),
+            ],
+        )
+        .map_err(|e| err(format!("initiateSession: {e}")))?;
 
     // ── 5. Register driver channel BEFORE launching the test runner ─────────────
     // The test runner connects to testmanagerd as soon as it launches and immediately
@@ -258,7 +291,8 @@ pub fn run(
     // The actual send channel is determined dynamically from the runner's registration
     // (see driver_invoke_chan below); driver_chan itself is only for testmanagerd routing.
     let driver_chan_name = "dtxproxy:XCTestDriverInterface:XCTestManager_IDEInterface";
-    let _driver_chan = conn1.request_channel(driver_chan_name)
+    let _driver_chan = conn1
+        .request_channel(driver_chan_name)
         .map_err(|e| err(format!("request driver channel: {e}")))?;
 
     let test_bundle_path = format!("{runner_path}/PlugIns/{}", config.xctest_config_name);
@@ -266,25 +300,26 @@ pub fn run(
 
     // Build XCTestConfiguration here so the dispatch handler below can capture it.
     // Build app_dependencies: runner + optional target app (matches Xcode's testApplicationDependencies)
-    let mut app_deps = vec![
-        (config.test_runner_bundle_id.to_string(), runner_path.clone()),
-    ];
+    let mut app_deps = vec![(
+        config.test_runner_bundle_id.to_string(),
+        runner_path.clone(),
+    )];
     if !config.bundle_id.is_empty() && !config.bundle_path.is_empty() {
         app_deps.push((config.bundle_id.to_string(), config.bundle_path.to_string()));
     }
 
     let xctest_config_bytes = build_xctest_configuration_bytes(config::XCTestConfigArgs {
-        session_id:             &session_id,
-        test_bundle_path:       &test_bundle_path,
-        product_module_name:    config.xctest_config_name.trim_end_matches(".xctest"),
-        target_bundle_id:       config.bundle_id,
-        target_path:            config.bundle_path,
-        tests_to_run:           config.tests_to_run,
-        tests_to_skip:          config.tests_to_skip,
-        is_xctest:              config.is_xctest,
-        initialize_for_ui:      config.initialize_for_ui,
-        app_dependencies:       &app_deps,
-        runner_bundle_id:       config.test_runner_bundle_id,
+        session_id: &session_id,
+        test_bundle_path: &test_bundle_path,
+        product_module_name: config.xctest_config_name.trim_end_matches(".xctest"),
+        target_bundle_id: config.bundle_id,
+        target_path: config.bundle_path,
+        tests_to_run: config.tests_to_run,
+        tests_to_skip: config.tests_to_skip,
+        is_xctest: config.is_xctest,
+        initialize_for_ui: config.initialize_for_ui,
+        app_dependencies: &app_deps,
+        runner_bundle_id: config.test_runner_bundle_id,
     });
 
     // Watch ch=0 for the runner's _requestChannelWithCode:identifier: for
@@ -294,20 +329,34 @@ pub fn run(
     thread::spawn(move || {
         fn decode_aux_str(a: &AuxValue) -> Option<String> {
             if let AuxValue::Bytes(b) = a {
-                plist::from_bytes::<plist::Value>(b).ok()
-                    .and_then(|v| v.as_dictionary()
+                plist::from_bytes::<plist::Value>(b).ok().and_then(|v| {
+                    v.as_dictionary()
                         .and_then(|d| d.get("$objects"))
                         .and_then(|a| a.as_array())
                         .and_then(|arr| arr.get(1))
-                        .and_then(|s| s.as_string()).map(|s| s.to_owned()))
-            } else { None }
+                        .and_then(|s| s.as_string())
+                        .map(|s| s.to_owned())
+                })
+            } else {
+                None
+            }
         }
         while let Ok(msg) = incoming0.recv() {
-            let sel = msg.payload.as_ref().and_then(archived_string).unwrap_or_default();
+            let sel = msg
+                .payload
+                .as_ref()
+                .and_then(archived_string)
+                .unwrap_or_default();
             if sel.contains("requestChannelWithCode") {
-                let code = msg.aux.first().and_then(|a| if let AuxValue::Int32(v) = a { Some(*v) } else { None });
+                let code = msg.aux.first().and_then(|a| {
+                    if let AuxValue::Int32(v) = a {
+                        Some(*v)
+                    } else {
+                        None
+                    }
+                });
                 let ident = msg.aux.get(1).and_then(decode_aux_str);
-                    if let (Some(code), Some(ident)) = (code, ident) {
+                if let (Some(code), Some(ident)) = (code, ident) {
                     if ident.contains("XCTestDriverInterface") {
                         // Sending on -(runner's code) routes to the runner via testmanagerd
                         driver_invoke_chan_clone.store(-code, std::sync::atomic::Ordering::Relaxed);
@@ -332,41 +381,61 @@ pub fn run(
         let mut test_case_finished = false;
         let mut plan_started = false;
         while let Ok(msg) = incoming1.recv() {
-            let selector = msg.payload.as_ref()
+            let selector = msg
+                .payload
+                .as_ref()
                 .and_then(archived_string)
                 .unwrap_or_default();
             // Decode first aux argument (the debug message text for logDebugMessage).
-            let aux0 = msg.aux.first().and_then(|a| {
-                if let AuxValue::Bytes(b) = a {
-                    plist::from_bytes::<plist::Value>(b).ok()
-                        .and_then(|v| v.as_dictionary()
-                            .and_then(|d| d.get("$objects"))
-                            .and_then(|a| a.as_array())
-                            .and_then(|arr| arr.get(1))
-                            .and_then(|s| s.as_string())
-                            .map(|s| s.to_owned()))
-                } else { None }
-            }).unwrap_or_default();
+            let aux0 = msg
+                .aux
+                .first()
+                .and_then(|a| {
+                    if let AuxValue::Bytes(b) = a {
+                        plist::from_bytes::<plist::Value>(b).ok().and_then(|v| {
+                            v.as_dictionary()
+                                .and_then(|d| d.get("$objects"))
+                                .and_then(|a| a.as_array())
+                                .and_then(|arr| arr.get(1))
+                                .and_then(|s| s.as_string())
+                                .map(|s| s.to_owned())
+                        })
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_default();
             if selector.contains("testRunnerReadyWithCapabilities") {
                 // Typed reply (type=3) with XCTestConfiguration — no prior ACK.
                 let _ = conn1_ref.reply(&msg, &xctest_config_bytes_clone);
             } else if selector.contains("didFinishExecutingTestPlan") {
-                if msg.expects_reply { let _ = conn1_ref.ack(&msg); }
+                if msg.expects_reply {
+                    let _ = conn1_ref.ack(&msg);
+                }
                 let _ = done_tx.try_send(());
                 break;
             } else if selector.contains("testCaseWithIdentifier:didFinishWithStatus:duration:")
-                   || selector.contains("testCaseDidFinishForTestClass:method:") {
-                if msg.expects_reply { let _ = conn1_ref.ack(&msg); }
+                || selector.contains("testCaseDidFinishForTestClass:method:")
+            {
+                if msg.expects_reply {
+                    let _ = conn1_ref.ack(&msg);
+                }
                 test_case_finished = true;
-            } else if test_case_finished && selector.contains("testSuiteWithIdentifier:didFinishAt:") {
+            } else if test_case_finished
+                && selector.contains("testSuiteWithIdentifier:didFinishAt:")
+            {
                 // Top-level suite finished after test cases ran — signal done.
                 // didFinishExecutingTestPlan sometimes doesn't arrive when runner
                 // stays alive in "confirming end of session" loop.
-                if msg.expects_reply { let _ = conn1_ref.ack(&msg); }
+                if msg.expects_reply {
+                    let _ = conn1_ref.ack(&msg);
+                }
                 let _ = done_tx2.try_send(());
             } else {
                 // Void-returning methods: ACK only.
-                if msg.expects_reply { let _ = conn1_ref.ack(&msg); }
+                if msg.expects_reply {
+                    let _ = conn1_ref.ack(&msg);
+                }
                 // The runner logs "requesting ready for testing" just before it enters
                 // the wait loop for _IDE_startExecutingTestPlanWithProtocolVersion:.
                 // Send the start command at this point so it arrives after the runner's
@@ -376,9 +445,11 @@ pub fn run(
                     // Use the runner's registered channel code (negated): in DTX proxy,
                     // sending on -(runner's code) routes to the runner.
                     let ch = driver_invoke_chan.load(std::sync::atomic::Ordering::Relaxed);
-                    let _ = conn1_ref.call_async(ch,
+                    let _ = conn1_ref.call_async(
+                        ch,
                         "_IDE_startExecutingTestPlanWithProtocolVersion:",
-                        &[ AuxValue::Bytes(dtx::archive_u64(36)) ]);
+                        &[AuxValue::Bytes(dtx::archive_u64(36))],
+                    );
                 }
             }
         }
@@ -386,30 +457,42 @@ pub fn run(
 
     // ── 6. Launch test runner ─────────────────────────────────────────────────
     let pid = launch_test_runner(
-        tunnel, server_addr, app_svc_port,
+        tunnel,
+        server_addr,
+        app_svc_port,
         config.test_runner_bundle_id,
         &session_str,
         &test_bundle_path,
         &config.extra_env,
-        config.is_xctest,           // adds libXCTestBundleInject for unit tests
-        config.initialize_for_ui,   // controls ActivateSuspended launch option
+        config.is_xctest,         // adds libXCTestBundleInject for unit tests
+        config.initialize_for_ui, // controls ActivateSuspended launch option
         &stdio_uuid,
-    ).map_err(|e| err(format!("launch test runner: {e}")))?;
+    )
+    .map_err(|e| err(format!("launch test runner: {e}")))?;
 
     writeln!(log_out, "[ios-rs] Test runner launched (pid={pid})").ok();
 
     // ── 7. conn2: control session + authorize ────────────────────────────────
-    let ide_chan2 = conn2.request_channel(chan_name)
+    let ide_chan2 = conn2
+        .request_channel(chan_name)
         .map_err(|e| err(format!("request channel conn2: {e}")))?;
 
     let empty_caps: HashMap<&str, Value> = HashMap::new();
-    conn2.call(ide_chan2, "_IDE_initiateControlSessionWithCapabilities:",
-        &[ AuxValue::Bytes(archive_xct_capabilities(&empty_caps)) ])
-    .map_err(|e| err(format!("initiateControlSession: {e}")))?;
+    conn2
+        .call(
+            ide_chan2,
+            "_IDE_initiateControlSessionWithCapabilities:",
+            &[AuxValue::Bytes(archive_xct_capabilities(&empty_caps))],
+        )
+        .map_err(|e| err(format!("initiateControlSession: {e}")))?;
 
-    conn2.call(ide_chan2, "_IDE_authorizeTestSessionWithProcessID:",
-        &[ AuxValue::Bytes(dtx::archive_u64(pid as u64)) ])
-    .map_err(|e| err(format!("authorizeTestSession: {e}")))?;
+    conn2
+        .call(
+            ide_chan2,
+            "_IDE_authorizeTestSessionWithProcessID:",
+            &[AuxValue::Bytes(dtx::archive_u64(pid as u64))],
+        )
+        .map_err(|e| err(format!("authorizeTestSession: {e}")))?;
 
     // ── 8. Stream output and wait for runner to exit ─────────────────────────
     // The stdio channel disconnects when the test runner process exits.
@@ -419,14 +502,20 @@ pub fn run(
 
     loop {
         match stdio_rx.try_recv() {
-            Ok(data)                                  => { log_out.write_all(&data).ok(); }
-            Err(mpsc::TryRecvError::Disconnected)     => break, // runner exited
-            Err(mpsc::TryRecvError::Empty)            => {}
+            Ok(data) => {
+                log_out.write_all(&data).ok();
+            }
+            Err(mpsc::TryRecvError::Disconnected) => break, // runner exited
+            Err(mpsc::TryRecvError::Empty) => {}
         }
         // Exit immediately when the test plan finishes — don't wait for the runner
         // process to die (it may linger for 1800s in "confirming end of session").
-        if done_rx.try_recv().is_ok() { break; }
-        if std::time::Instant::now() > deadline { break; }
+        if done_rx.try_recv().is_ok() {
+            break;
+        }
+        if std::time::Instant::now() > deadline {
+            break;
+        }
         thread::sleep(Duration::from_millis(50));
     }
 
@@ -445,7 +534,8 @@ fn open_dtx(
     server_addr: std::net::Ipv6Addr,
     port: u16,
 ) -> Result<DtxConn, std::io::Error> {
-    let stream = tunnel.connect(server_addr, port)
+    let stream = tunnel
+        .connect(server_addr, port)
         .map_err(|e| std::io::Error::other(e.to_string()))?;
     let (tcp_r, tcp_w) = unix_to_tcp_pair(stream)?;
     Ok(DtxConn::new(tcp_r, tcp_w))
@@ -466,8 +556,12 @@ fn unix_to_tcp_pair(
             let mut uni_w = unix;
             let mut tcp_w = server.try_clone().unwrap();
             let mut tcp_r = server;
-            let t1 = thread::spawn(move || { std::io::copy(&mut uni_r, &mut tcp_w).ok(); });
-            let t2 = thread::spawn(move || { std::io::copy(&mut tcp_r, &mut uni_w).ok(); });
+            let t1 = thread::spawn(move || {
+                std::io::copy(&mut uni_r, &mut tcp_w).ok();
+            });
+            let t2 = thread::spawn(move || {
+                std::io::copy(&mut tcp_r, &mut uni_w).ok();
+            });
             let _ = (t1.join(), t2.join());
         }
     });
@@ -491,7 +585,12 @@ fn read_all<R: Read>(r: &mut R, buf: &mut [u8]) -> std::io::Result<()> {
     let mut done = 0;
     while done < buf.len() {
         let n = r.read(&mut buf[done..])?;
-        if n == 0 { return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "eof")); }
+        if n == 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "eof",
+            ));
+        }
         done += n;
     }
     Ok(())
@@ -499,7 +598,10 @@ fn read_all<R: Read>(r: &mut R, buf: &mut [u8]) -> std::io::Result<()> {
 
 fn rand_uuid() -> [u8; 16] {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let t = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
+    let t = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
     let mut b = [0u8; 16];
     let tb = t.to_le_bytes();
     b[..16].copy_from_slice(&tb[..16]);
@@ -517,7 +619,10 @@ fn uuid_to_upper_string(bytes: &[u8; 16]) -> String {
 }
 
 fn build_caps<'a>(entries: &[(&'a str, bool)]) -> HashMap<&'a str, Value> {
-    entries.iter().map(|(k, v)| (*k, Value::Boolean(*v))).collect()
+    entries
+        .iter()
+        .map(|(k, v)| (*k, Value::Boolean(*v)))
+        .collect()
 }
 
 /// Extract the string from an NSKeyedArchiver-wrapped string primitive.
@@ -534,26 +639,28 @@ fn archived_string(v: &plist::Value) -> Option<String> {
 /// Launch the test runner via coredevice.appservice.
 #[allow(clippy::too_many_arguments)]
 fn launch_test_runner(
-    tunnel:          &SmoltcpTunnel,
-    server_addr:     std::net::Ipv6Addr,
-    app_svc_port:      u16,
-    bundle_id:         &str,
-    session_id:        &str,
-    test_bundle_path:  &str,
-    extra_env:         &HashMap<String, String>,
-    is_xctest:         bool,
+    tunnel: &SmoltcpTunnel,
+    server_addr: std::net::Ipv6Addr,
+    app_svc_port: u16,
+    bundle_id: &str,
+    session_id: &str,
+    test_bundle_path: &str,
+    extra_env: &HashMap<String, String>,
+    is_xctest: bool,
     initialize_for_ui: bool,
-    stdio_uuid:        &[u8; 16],
+    stdio_uuid: &[u8; 16],
 ) -> Result<i64, crate::tunnel::Error> {
     use crate::tunnel::Error;
 
-    let stream = tunnel.connect(server_addr, app_svc_port)
+    let stream = tunnel
+        .connect(server_addr, app_svc_port)
         .map_err(|e| Error::Protocol(format!("appservice connect: {e}")))?;
 
     // Relay UnixStream → loopback TCP for RemoteXpcConn
     let listener = TcpListener::bind("127.0.0.1:0")
         .map_err(|e| Error::Protocol(format!("tcp listener: {e}")))?;
-    let relay_addr = listener.local_addr()
+    let relay_addr = listener
+        .local_addr()
         .map_err(|e| Error::Protocol(format!("local_addr: {e}")))?;
 
     thread::spawn(move || {
@@ -562,8 +669,12 @@ fn launch_test_runner(
             let mut uni_w = stream;
             let mut tcp_w = server.try_clone().unwrap();
             let mut tcp_r = server;
-            let t1 = thread::spawn(move || { std::io::copy(&mut uni_r, &mut tcp_w).ok(); });
-            let t2 = thread::spawn(move || { std::io::copy(&mut tcp_r, &mut uni_w).ok(); });
+            let t1 = thread::spawn(move || {
+                std::io::copy(&mut uni_r, &mut tcp_w).ok();
+            });
+            let t2 = thread::spawn(move || {
+                std::io::copy(&mut tcp_r, &mut uni_w).ok();
+            });
             let _ = (t1.join(), t2.join());
         }
     });
@@ -577,7 +688,9 @@ fn launch_test_runner(
     // minimal env with no DYLD injections and a relative XCTestBundlePath.
     // Extra DYLD vars trigger XCUITest host-app discovery logic.
     let xctest_bundle_name = test_bundle_path
-        .rsplit('/').next().unwrap_or(test_bundle_path);
+        .rsplit('/')
+        .next()
+        .unwrap_or(test_bundle_path);
     let bundle_path_for_env = if initialize_for_ui {
         test_bundle_path
     } else {
@@ -598,20 +711,35 @@ fn launch_test_runner(
     // Notably: libMainThreadChecker is NOT in the base env from Xcode (it's only
     // in TestingEnvironmentVariables which the runner merges in itself).
     let mut env: HashMap<String, crate::xpc::Value> = [
-        ("DYLD_INSERT_LIBRARIES",     &libraries as &str),
-        ("DYLD_FRAMEWORK_PATH",       if initialize_for_ui { "/System/Developer/Library/Frameworks" } else { "" }),
-        ("DYLD_LIBRARY_PATH",         if initialize_for_ui { "/System/Developer/usr/lib" } else { "" }),
-        ("NSUnbufferedIO",            "YES"),
-        ("OS_ACTIVITY_DT_MODE",       "YES"),
+        ("DYLD_INSERT_LIBRARIES", &libraries as &str),
+        (
+            "DYLD_FRAMEWORK_PATH",
+            if initialize_for_ui {
+                "/System/Developer/Library/Frameworks"
+            } else {
+                ""
+            },
+        ),
+        (
+            "DYLD_LIBRARY_PATH",
+            if initialize_for_ui {
+                "/System/Developer/usr/lib"
+            } else {
+                ""
+            },
+        ),
+        ("NSUnbufferedIO", "YES"),
+        ("OS_ACTIVITY_DT_MODE", "YES"),
         ("SQLITE_ENABLE_THREAD_ASSERTIONS", "1"),
-        ("XCTestBundlePath",          bundle_path_for_env),
+        ("XCTestBundlePath", bundle_path_for_env),
         ("XCTestConfigurationFilePath", ""),
-        ("XCTestManagerVariant",      "DDI"),
-        ("XCTestSessionIdentifier",   session_id),
-    ].iter()
-     .filter(|(_, v)| !v.is_empty())
-     .map(|(k, v)| (k.to_string(), crate::xpc::Value::String(v.to_string())))
-     .collect();
+        ("XCTestManagerVariant", "DDI"),
+        ("XCTestSessionIdentifier", session_id),
+    ]
+    .iter()
+    .filter(|(_, v)| !v.is_empty())
+    .map(|(k, v)| (k.to_string(), crate::xpc::Value::String(v.to_string())))
+    .collect();
 
     for (k, v) in extra_env {
         env.insert(k.clone(), crate::xpc::Value::String(v.clone()));
@@ -619,10 +747,13 @@ fn launch_test_runner(
 
     let opts: HashMap<String, crate::xpc::Value> = if initialize_for_ui && !is_xctest {
         [
-            ("ActivateSuspended",   crate::xpc::Value::Uint64(1)),
-            ("StartSuspendedKey",   crate::xpc::Value::Uint64(0)),
+            ("ActivateSuspended", crate::xpc::Value::Uint64(1)),
+            ("StartSuspendedKey", crate::xpc::Value::Uint64(0)),
             ("__ActivateSuspended", crate::xpc::Value::Uint64(1)),
-        ].iter().map(|(k, v)| (k.to_string(), v.clone())).collect()
+        ]
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.clone()))
+        .collect()
     } else {
         HashMap::new()
     };
@@ -638,15 +769,23 @@ fn launch_test_runner(
     let payload = build_coredevice_request(
         &device_id,
         "com.apple.coredevice.feature.launchapplication",
-        Some(build_launch_input(bundle_id, &env, &opts, &platform_opts_buf, stdio_uuid)),
+        Some(build_launch_input(
+            bundle_id,
+            &env,
+            &opts,
+            &platform_opts_buf,
+            stdio_uuid,
+        )),
     );
 
-    let reply = xpc_conn.request(payload)
+    let reply = xpc_conn
+        .request(payload)
         .map_err(|e| Error::Protocol(format!("appservice request: {e}")))?;
     let _ = (inv_id, stdio_uuid_str);
 
     // Extract PID from reply (CoreDevice.output.processToken.processIdentifier)
-    let pid = reply.as_dict()
+    let pid = reply
+        .as_dict()
         .and_then(|d| d.get("CoreDevice.output"))
         .and_then(|v| v.as_dict())
         .and_then(|d| d.get("processToken"))
@@ -660,25 +799,47 @@ fn launch_test_runner(
 
 fn build_coredevice_request(
     device_id: &str,
-    feature:   &str,
-    input:     Option<crate::xpc::Value>,
+    feature: &str,
+    input: Option<crate::xpc::Value>,
 ) -> crate::xpc::Value {
     use crate::xpc::Value;
     let mut d = std::collections::HashMap::new();
-    d.insert("CoreDevice.CoreDeviceDDIProtocolVersion".to_string(), Value::Int64(0));
-    d.insert("CoreDevice.action".to_string(), Value::Dictionary(std::collections::HashMap::new()));
+    d.insert(
+        "CoreDevice.CoreDeviceDDIProtocolVersion".to_string(),
+        Value::Int64(0),
+    );
+    d.insert(
+        "CoreDevice.action".to_string(),
+        Value::Dictionary(std::collections::HashMap::new()),
+    );
     d.insert("CoreDevice.coreDeviceVersion".to_string(), {
         let mut ver = std::collections::HashMap::new();
-        ver.insert("stringValue".to_string(),              Value::String("348.1".into()));
-        ver.insert("originalComponentsCount".to_string(),  Value::Int64(2));
-        ver.insert("components".to_string(), Value::Array(vec![
-            Value::Uint64(348), Value::Uint64(1), Value::Uint64(0), Value::Uint64(0), Value::Uint64(0),
-        ]));
+        ver.insert("stringValue".to_string(), Value::String("348.1".into()));
+        ver.insert("originalComponentsCount".to_string(), Value::Int64(2));
+        ver.insert(
+            "components".to_string(),
+            Value::Array(vec![
+                Value::Uint64(348),
+                Value::Uint64(1),
+                Value::Uint64(0),
+                Value::Uint64(0),
+                Value::Uint64(0),
+            ]),
+        );
         Value::Dictionary(ver)
     });
-    d.insert("CoreDevice.deviceIdentifier".to_string(),     Value::String(device_id.into()));
-    d.insert("CoreDevice.featureIdentifier".to_string(),    Value::String(feature.into()));
-    d.insert("CoreDevice.invocationIdentifier".to_string(), Value::String(uuid_to_upper_string(&rand_uuid())));
+    d.insert(
+        "CoreDevice.deviceIdentifier".to_string(),
+        Value::String(device_id.into()),
+    );
+    d.insert(
+        "CoreDevice.featureIdentifier".to_string(),
+        Value::String(feature.into()),
+    );
+    d.insert(
+        "CoreDevice.invocationIdentifier".to_string(),
+        Value::String(uuid_to_upper_string(&rand_uuid())),
+    );
     if let Some(inp) = input {
         d.insert("CoreDevice.input".to_string(), inp);
     } else {
@@ -688,11 +849,11 @@ fn build_coredevice_request(
 }
 
 fn build_launch_input(
-    bundle_id:        &str,
-    env:              &HashMap<String, crate::xpc::Value>,
-    opts:             &HashMap<String, crate::xpc::Value>,
-    platform_opts:    &[u8],
-    stdio_uuid:       &[u8; 16],
+    bundle_id: &str,
+    env: &HashMap<String, crate::xpc::Value>,
+    opts: &HashMap<String, crate::xpc::Value>,
+    platform_opts: &[u8],
+    stdio_uuid: &[u8; 16],
 ) -> crate::xpc::Value {
     use crate::xpc::Value;
     let mut d = std::collections::HashMap::new();
@@ -705,26 +866,37 @@ fn build_launch_input(
     });
     d.insert("options".to_string(), {
         let mut o = std::collections::HashMap::new();
-        o.insert("arguments".to_string(),                     Value::Array(vec![]));
-        o.insert("environmentVariables".to_string(),          Value::Dictionary(env.clone()));
-        o.insert("platformSpecificOptions".to_string(),       Value::Data(platform_opts.to_vec()));
-        o.insert("standardIOUsesPseudoterminals".to_string(), Value::Bool(true));
-        o.insert("startStopped".to_string(),                  Value::Bool(false));
-        o.insert("terminateExisting".to_string(),             Value::Bool(true));
+        o.insert("arguments".to_string(), Value::Array(vec![]));
+        o.insert(
+            "environmentVariables".to_string(),
+            Value::Dictionary(env.clone()),
+        );
+        o.insert(
+            "platformSpecificOptions".to_string(),
+            Value::Data(platform_opts.to_vec()),
+        );
+        o.insert(
+            "standardIOUsesPseudoterminals".to_string(),
+            Value::Bool(true),
+        );
+        o.insert("startStopped".to_string(), Value::Bool(false));
+        o.insert("terminateExisting".to_string(), Value::Bool(true));
         o.insert("user".to_string(), {
             let mut u = std::collections::HashMap::new();
             u.insert("active".to_string(), Value::Bool(true));
             Value::Dictionary(u)
         });
         o.insert("workingDirectory".to_string(), Value::Null);
-        for (k, v) in opts { o.insert(k.clone(), v.clone()); }
+        for (k, v) in opts {
+            o.insert(k.clone(), v.clone());
+        }
         Value::Dictionary(o)
     });
     d.insert("standardIOIdentifiers".to_string(), {
         let mut s = std::collections::HashMap::new();
-        s.insert("standardInput".to_string(),  Value::Uuid(*stdio_uuid));
+        s.insert("standardInput".to_string(), Value::Uuid(*stdio_uuid));
         s.insert("standardOutput".to_string(), Value::Uuid(*stdio_uuid));
-        s.insert("standardError".to_string(),  Value::Uuid(*stdio_uuid));
+        s.insert("standardError".to_string(), Value::Uuid(*stdio_uuid));
         Value::Dictionary(s)
     });
     Value::Dictionary(d)

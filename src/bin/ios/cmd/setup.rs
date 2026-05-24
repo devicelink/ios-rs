@@ -8,9 +8,9 @@ use crate::cmd::output::{print_json, ActionResult, OutputMode};
 
 #[derive(serde::Serialize)]
 struct SetupStatus {
-    supervised:   bool,
+    supervised: bool,
     organization: Option<String>,
-    complete:     bool,
+    complete: bool,
 }
 
 /// Show supervision and Setup-Assistant state.
@@ -20,16 +20,31 @@ pub fn status(udid: Option<&str>, mode: ConnectionMode, output: OutputMode) -> R
     mc.flush().context("flush")?;
     let config = mc.get_cloud_config().context("GetCloudConfiguration")?;
 
-    let supervised = config.get("IsSupervised").and_then(|v| v.as_boolean()).unwrap_or(false);
-    let complete   = config.get("CloudConfigurationIsComplete").and_then(|v| v.as_boolean()).unwrap_or(false);
-    let org        = config.get("OrganizationName").and_then(|v| v.as_string()).map(|s| s.to_owned());
+    let supervised = config
+        .get("IsSupervised")
+        .and_then(|v| v.as_boolean())
+        .unwrap_or(false);
+    let complete = config
+        .get("CloudConfigurationIsComplete")
+        .and_then(|v| v.as_boolean())
+        .unwrap_or(false);
+    let org = config
+        .get("OrganizationName")
+        .and_then(|v| v.as_string())
+        .map(|s| s.to_owned());
 
     if output.is_json() {
-        return print_json(&SetupStatus { supervised, organization: org, complete });
+        return print_json(&SetupStatus {
+            supervised,
+            organization: org,
+            complete,
+        });
     }
 
     println!("supervised:    {supervised}");
-    if let Some(ref name) = org { println!("organization:  {name}"); }
+    if let Some(ref name) = org {
+        println!("organization:  {name}");
+    }
     println!("setup complete: {complete}");
     Ok(())
 }
@@ -44,9 +59,15 @@ pub fn skip(udid: Option<&str>, mode: ConnectionMode, output: OutputMode) -> Res
 
     let mut cfg = plist::Dictionary::new();
     cfg.insert("AllowPairing".into(), plist::Value::Boolean(true));
-    cfg.insert("SkipSetup".into(), plist::Value::Array(
-        SKIP_SETUP_KEYS.iter().map(|k| plist::Value::String(k.to_string())).collect()
-    ));
+    cfg.insert(
+        "SkipSetup".into(),
+        plist::Value::Array(
+            SKIP_SETUP_KEYS
+                .iter()
+                .map(|k| plist::Value::String(k.to_string()))
+                .collect(),
+        ),
+    );
 
     mc.set_cloud_config(cfg).context("SetCloudConfiguration")?;
     if output.is_json() {
@@ -62,19 +83,18 @@ pub fn skip(udid: Option<&str>, mode: ConnectionMode, output: OutputMode) -> Res
 /// Requires the same supervision certificate and private key that were used for
 /// supervised pairing.  The cert file may be DER or PEM; the key must be PEM.
 pub fn enroll(
-    udid:      Option<&str>,
-    mode:      ConnectionMode,
-    org:       &str,
+    udid: Option<&str>,
+    mode: ConnectionMode,
+    org: &str,
     cert_path: &str,
-    key_path:  &str,
-    output:    OutputMode,
+    key_path: &str,
+    output: OutputMode,
 ) -> Result<()> {
     let cert_der = load_der_or_pem_cert(cert_path)
         .with_context(|| format!("read supervision cert {cert_path}"))?;
-    let key_bytes = std::fs::read(key_path)
-        .with_context(|| format!("read supervision key {key_path}"))?;
-    let key = parse_rsa_key_bytes(&key_bytes)
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let key_bytes =
+        std::fs::read(key_path).with_context(|| format!("read supervision key {key_path}"))?;
+    let key = parse_rsa_key_bytes(&key_bytes).map_err(|e| anyhow::anyhow!("{e}"))?;
 
     let org_magic = random_uuid();
 
@@ -85,17 +105,27 @@ pub fn enroll(
 
     // Build supervised cloud configuration.
     let mut cfg = plist::Dictionary::new();
-    cfg.insert("AllowPairing".into(),     plist::Value::Boolean(true));
-    cfg.insert("IsSupervised".into(),     plist::Value::Boolean(true));
-    cfg.insert("IsMultiUser".into(),      plist::Value::Boolean(false));
-    cfg.insert("OrganizationName".into(), plist::Value::String(org.to_owned()));
+    cfg.insert("AllowPairing".into(), plist::Value::Boolean(true));
+    cfg.insert("IsSupervised".into(), plist::Value::Boolean(true));
+    cfg.insert("IsMultiUser".into(), plist::Value::Boolean(false));
+    cfg.insert(
+        "OrganizationName".into(),
+        plist::Value::String(org.to_owned()),
+    );
     cfg.insert("OrganizationMagic".into(), plist::Value::String(org_magic));
-    cfg.insert("SkipSetup".into(), plist::Value::Array(
-        SKIP_SETUP_KEYS.iter().map(|k| plist::Value::String(k.to_string())).collect()
-    ));
-    cfg.insert("SupervisorHostCertificates".into(), plist::Value::Array(
-        vec![plist::Value::Data(cert_der.clone())]
-    ));
+    cfg.insert(
+        "SkipSetup".into(),
+        plist::Value::Array(
+            SKIP_SETUP_KEYS
+                .iter()
+                .map(|k| plist::Value::String(k.to_string()))
+                .collect(),
+        ),
+    );
+    cfg.insert(
+        "SupervisorHostCertificates".into(),
+        plist::Value::Array(vec![plist::Value::Data(cert_der.clone())]),
+    );
 
     eprintln!("setting cloud configuration (supervised, org={org:?})…");
     mc.set_cloud_config(cfg).context("SetCloudConfiguration")?;
@@ -108,10 +138,13 @@ pub fn enroll(
         .map_err(|e| anyhow::anyhow!("sign escalation challenge: {e}"))?;
 
     mc.escalate_response(&signed).context("EscalateResponse")?;
-    mc.proceed_keybag_migration().context("ProceedWithKeybagMigration")?;
+    mc.proceed_keybag_migration()
+        .context("ProceedWithKeybagMigration")?;
 
     if output.is_json() {
-        print_json(&ActionResult::with_msg(format!("supervised enrollment complete — org={org:?}")))?;
+        print_json(&ActionResult::with_msg(format!(
+            "supervised enrollment complete — org={org:?}"
+        )))?;
     } else {
         println!("supervised enrollment complete — org={org:?}");
     }
@@ -128,9 +161,16 @@ fn load_der_or_pem_cert(path: &str) -> anyhow::Result<Vec<u8>> {
         let mut b64 = String::new();
         let mut in_block = false;
         for line in pem.lines() {
-            if line.starts_with("-----BEGIN") { in_block = true; continue; }
-            if line.starts_with("-----END")   { break; }
-            if in_block { b64.push_str(line); }
+            if line.starts_with("-----BEGIN") {
+                in_block = true;
+                continue;
+            }
+            if line.starts_with("-----END") {
+                break;
+            }
+            if in_block {
+                b64.push_str(line);
+            }
         }
         base64_decode(&b64)
     } else {
@@ -141,17 +181,27 @@ fn load_der_or_pem_cert(path: &str) -> anyhow::Result<Vec<u8>> {
 fn base64_decode(s: &str) -> anyhow::Result<Vec<u8>> {
     const TABLE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut map = [0xff_u8; 256];
-    for (i, &c) in TABLE.iter().enumerate() { map[c as usize] = i as u8; }
-    let bytes: Vec<u8> = s.bytes().filter(|&b| b != b'=' && b != b'\n' && b != b'\r').collect();
+    for (i, &c) in TABLE.iter().enumerate() {
+        map[c as usize] = i as u8;
+    }
+    let bytes: Vec<u8> = s
+        .bytes()
+        .filter(|&b| b != b'=' && b != b'\n' && b != b'\r')
+        .collect();
     let mut out = Vec::with_capacity(bytes.len() * 3 / 4);
     for chunk in bytes.chunks(4) {
-        if chunk.len() < 2 { break; }
-        let b0 = map[chunk[0] as usize]; let b1 = map[chunk[1] as usize];
+        if chunk.len() < 2 {
+            break;
+        }
+        let b0 = map[chunk[0] as usize];
+        let b1 = map[chunk[1] as usize];
         out.push((b0 << 2) | (b1 >> 4));
         if chunk.len() > 2 {
             let b2 = map[chunk[2] as usize];
             out.push((b1 << 4) | (b2 >> 2));
-            if chunk.len() > 3 { out.push((b2 << 6) | map[chunk[3] as usize]); }
+            if chunk.len() > 3 {
+                out.push((b2 << 6) | map[chunk[3] as usize]);
+            }
         }
     }
     Ok(out)
@@ -159,7 +209,9 @@ fn base64_decode(s: &str) -> anyhow::Result<Vec<u8>> {
 
 fn random_uuid() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let t = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+    let t = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
     let n = t.as_nanos();
     format!(
         "{:08X}-{:04X}-4{:03X}-{:04X}-{:012X}",

@@ -24,19 +24,27 @@ impl ConnectionMode {
 
     /// Apply a `--legacy` CLI flag on top of the current mode.
     pub fn with_legacy_flag(self, legacy: bool) -> Self {
-        if legacy { ConnectionMode::Legacy } else { self }
+        if legacy {
+            ConnectionMode::Legacy
+        } else {
+            self
+        }
     }
 
-    pub fn is_legacy(self) -> bool { self == ConnectionMode::Legacy }
-    pub fn is_rsd(self)    -> bool { self == ConnectionMode::Rsd }
+    pub fn is_legacy(self) -> bool {
+        self == ConnectionMode::Legacy
+    }
+    pub fn is_rsd(self) -> bool {
+        self == ConnectionMode::Rsd
+    }
 }
 
 impl std::fmt::Display for ConnectionMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ConnectionMode::Auto   => write!(f, "auto"),
+            ConnectionMode::Auto => write!(f, "auto"),
             ConnectionMode::Legacy => write!(f, "legacy"),
-            ConnectionMode::Rsd   => write!(f, "rsd"),
+            ConnectionMode::Rsd => write!(f, "rsd"),
         }
     }
 }

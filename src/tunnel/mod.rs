@@ -13,4 +13,4 @@ pub use error::Error;
 pub use ios17::Ios17Tunnel;
 pub use mode::ConnectionMode;
 pub use smoltcp_stack::SmoltcpTunnel;
-pub use version::{IosVersion, detect_version};
+pub use version::{detect_version, IosVersion};

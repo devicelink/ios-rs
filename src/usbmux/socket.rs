@@ -25,7 +25,10 @@ impl MuxSocket {
         if let Ok(path) = std::env::var("USBMUXD_SOCKET_ADDRESS") {
             if let Some((host, port)) = path.split_once(':') {
                 let port: u16 = port.parse().map_err(|_| {
-                    io::Error::new(io::ErrorKind::InvalidInput, "bad USBMUXD_SOCKET_ADDRESS port")
+                    io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "bad USBMUXD_SOCKET_ADDRESS port",
+                    )
                 })?;
                 return Ok(MuxSocket::Tcp(TcpStream::connect((host, port))?));
             }
@@ -58,7 +61,7 @@ impl MuxSocket {
         match self {
             #[cfg(unix)]
             MuxSocket::Unix(s) => Ok(MuxSocket::Unix(s.try_clone()?)),
-            MuxSocket::Tcp(s)  => Ok(MuxSocket::Tcp(s.try_clone()?)),
+            MuxSocket::Tcp(s) => Ok(MuxSocket::Tcp(s.try_clone()?)),
             MuxSocket::External(_) => Err(io::Error::new(
                 io::ErrorKind::Unsupported,
                 "External MuxSocket cannot be cloned",
@@ -71,8 +74,8 @@ impl io::Read for MuxSocket {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
             #[cfg(unix)]
-            MuxSocket::Unix(s)     => s.read(buf),
-            MuxSocket::Tcp(s)      => s.read(buf),
+            MuxSocket::Unix(s) => s.read(buf),
+            MuxSocket::Tcp(s) => s.read(buf),
             MuxSocket::External(s) => s.read(buf),
         }
     }
@@ -82,16 +85,16 @@ impl io::Write for MuxSocket {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         match self {
             #[cfg(unix)]
-            MuxSocket::Unix(s)     => s.write(buf),
-            MuxSocket::Tcp(s)      => s.write(buf),
+            MuxSocket::Unix(s) => s.write(buf),
+            MuxSocket::Tcp(s) => s.write(buf),
             MuxSocket::External(s) => s.write(buf),
         }
     }
     fn flush(&mut self) -> io::Result<()> {
         match self {
             #[cfg(unix)]
-            MuxSocket::Unix(s)     => s.flush(),
-            MuxSocket::Tcp(s)      => s.flush(),
+            MuxSocket::Unix(s) => s.flush(),
+            MuxSocket::Tcp(s) => s.flush(),
             MuxSocket::External(s) => s.flush(),
         }
     }

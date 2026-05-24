@@ -35,9 +35,9 @@ fn handle(client: TcpStream, device_id: u32, device_port: u16) -> Result<()> {
 
     // Bidirectional copy between the local TCP client and the usbmux tunnel.
     // We need two directions concurrently — use two threads sharing clones.
-    let client_read  = client.try_clone()?;
+    let client_read = client.try_clone()?;
     let client_write = client;
-    let tunnel_read  = tunnel.try_clone()?;
+    let tunnel_read = tunnel.try_clone()?;
     let tunnel_write = tunnel;
 
     let t1 = thread::spawn(move || copy_half(client_read, tunnel_write));
@@ -54,7 +54,9 @@ fn copy_half(mut src: impl io::Read, mut dst: impl io::Write) {
         match src.read(&mut buf) {
             Ok(0) | Err(_) => break,
             Ok(n) => {
-                if dst.write_all(&buf[..n]).is_err() { break; }
+                if dst.write_all(&buf[..n]).is_err() {
+                    break;
+                }
             }
         }
     }

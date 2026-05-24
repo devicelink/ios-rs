@@ -13,7 +13,9 @@ pub struct AmfiClient {
 
 impl AmfiClient {
     pub fn connect(session: &mut LockdownSession) -> Result<Self, Error> {
-        Ok(AmfiClient { stream: session.connect_service(SERVICE)? })
+        Ok(AmfiClient {
+            stream: session.connect_service(SERVICE)?,
+        })
     }
 
     /// Returns `true` if developer mode is currently enabled.
@@ -22,13 +24,15 @@ impl AmfiClient {
         req.insert("EnableDeveloperMode".into(), Value::Boolean(false));
         self.send(&Value::Dictionary(req))?;
         let resp = self.recv()?;
-        if let Some(err) = resp.as_dictionary()
+        if let Some(err) = resp
+            .as_dictionary()
             .and_then(|d| d.get("Error"))
             .and_then(|v| v.as_string())
         {
             return Err(Error::Lockdown(format!("amfi status: {err}")));
         }
-        Ok(resp.as_dictionary()
+        Ok(resp
+            .as_dictionary()
             .and_then(|d| d.get("DeveloperModeEnabled"))
             .and_then(|v| v.as_boolean())
             .unwrap_or(false))
@@ -40,13 +44,15 @@ impl AmfiClient {
         req.insert("EnableDeveloperMode".into(), Value::Boolean(true));
         self.send(&Value::Dictionary(req))?;
         let resp = self.recv()?;
-        if let Some(err) = resp.as_dictionary()
+        if let Some(err) = resp
+            .as_dictionary()
             .and_then(|d| d.get("Error"))
             .and_then(|v| v.as_string())
         {
             return Err(Error::Lockdown(format!("amfi enable: {err}")));
         }
-        let reboot_required = resp.as_dictionary()
+        let reboot_required = resp
+            .as_dictionary()
             .and_then(|d| d.get("RebootRequired"))
             .and_then(|v| v.as_boolean())
             .unwrap_or(false);
@@ -80,7 +86,9 @@ fn read_exact(s: &mut MuxSocket, buf: &mut [u8]) -> Result<(), Error> {
     let mut done = 0;
     while done < buf.len() {
         let n = s.read(&mut buf[done..])?;
-        if n == 0 { return Err(Error::Closed); }
+        if n == 0 {
+            return Err(Error::Closed);
+        }
         done += n;
     }
     Ok(())

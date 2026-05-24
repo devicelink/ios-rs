@@ -1,38 +1,43 @@
 use std::collections::HashMap;
 
-use super::{
-    Message, XpcError, Value,
-    PAYLOAD_MAGIC, PAYLOAD_VERSION, WRAPPER_MAGIC,
-};
+use super::{Message, Value, XpcError, PAYLOAD_MAGIC, PAYLOAD_VERSION, WRAPPER_MAGIC};
 
 // ── XPC type tags ────────────────────────────────────────────────────────────
 
-const TYPE_NULL: u32       = 0x0000_1000;
-const TYPE_BOOL: u32       = 0x0000_2000;
-const TYPE_INT64: u32      = 0x0000_3000;
-const TYPE_UINT64: u32     = 0x0000_4000;
-const TYPE_DOUBLE: u32     = 0x0000_5000;
-const TYPE_DATA: u32       = 0x0000_8000;
-const TYPE_STRING: u32     = 0x0000_9000;
-const TYPE_UUID: u32       = 0x0000_a000;
-const TYPE_ARRAY: u32      = 0x0000_e000;
+const TYPE_NULL: u32 = 0x0000_1000;
+const TYPE_BOOL: u32 = 0x0000_2000;
+const TYPE_INT64: u32 = 0x0000_3000;
+const TYPE_UINT64: u32 = 0x0000_4000;
+const TYPE_DOUBLE: u32 = 0x0000_5000;
+const TYPE_DATA: u32 = 0x0000_8000;
+const TYPE_STRING: u32 = 0x0000_9000;
+const TYPE_UUID: u32 = 0x0000_a000;
+const TYPE_ARRAY: u32 = 0x0000_e000;
 const TYPE_DICTIONARY: u32 = 0x0000_f000;
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 /// Round `n` up to the next 4-byte boundary.
-fn pad4(n: usize) -> usize { (n + 3) & !3 }
+fn pad4(n: usize) -> usize {
+    (n + 3) & !3
+}
 
 fn read_u32le(buf: &[u8], pos: usize) -> Result<u32, XpcError> {
     buf.get(pos..pos + 4)
         .map(|s| u32::from_le_bytes(s.try_into().unwrap()))
-        .ok_or(XpcError::TooShort { need: pos + 4, got: buf.len() })
+        .ok_or(XpcError::TooShort {
+            need: pos + 4,
+            got: buf.len(),
+        })
 }
 
 fn read_u64le(buf: &[u8], pos: usize) -> Result<u64, XpcError> {
     buf.get(pos..pos + 8)
         .map(|s| u64::from_le_bytes(s.try_into().unwrap()))
-        .ok_or(XpcError::TooShort { need: pos + 8, got: buf.len() })
+        .ok_or(XpcError::TooShort {
+            need: pos + 8,
+            got: buf.len(),
+        })
 }
 
 // ── decode ───────────────────────────────────────────────────────────────────
@@ -40,19 +45,25 @@ fn read_u64le(buf: &[u8], pos: usize) -> Result<u64, XpcError> {
 /// Decode an XPC message from `buf`. Returns `(message, bytes_consumed)`.
 pub fn decode_message(buf: &[u8]) -> Result<(Message, usize), XpcError> {
     if buf.len() < 24 {
-        return Err(XpcError::TooShort { need: 24, got: buf.len() });
+        return Err(XpcError::TooShort {
+            need: 24,
+            got: buf.len(),
+        });
     }
     let magic = read_u32le(buf, 0)?;
     if magic != WRAPPER_MAGIC {
         return Err(XpcError::BadMagic(magic));
     }
-    let flags    = read_u32le(buf, 4)?;
+    let flags = read_u32le(buf, 4)?;
     let body_len = read_u64le(buf, 8)? as usize;
-    let msg_id   = read_u64le(buf, 16)?;
+    let msg_id = read_u64le(buf, 16)?;
 
     let total = 24 + body_len;
     if buf.len() < total {
-        return Err(XpcError::TooShort { need: total, got: buf.len() });
+        return Err(XpcError::TooShort {
+            need: total,
+            got: buf.len(),
+        });
     }
 
     let body = if body_len >= 8 {
@@ -68,26 +79,40 @@ pub fn decode_message(buf: &[u8]) -> Result<(Message, usize), XpcError> {
         None
     };
 
-    Ok((Message { flags, msg_id, body }, total))
+    Ok((
+        Message {
+            flags,
+            msg_id,
+            body,
+        },
+        total,
+    ))
 }
 
 fn decode_value(buf: &[u8], pos: usize) -> Result<(Value, usize), XpcError> {
     let tag = read_u32le(buf, pos)?;
-    let p   = pos + 4; // after the type tag
+    let p = pos + 4; // after the type tag
 
     match tag {
         TYPE_NULL => Ok((Value::Null, p)),
 
         TYPE_BOOL => {
-            let v = *buf.get(p).ok_or(XpcError::TooShort { need: p + 1, got: buf.len() })? != 0;
+            let v = *buf.get(p).ok_or(XpcError::TooShort {
+                need: p + 1,
+                got: buf.len(),
+            })? != 0;
             Ok((Value::Bool(v), p + 4)) // bool + 3 pad bytes
         }
 
         TYPE_INT64 => {
             let n = i64::from_le_bytes(
                 buf.get(p..p + 8)
-                    .ok_or(XpcError::TooShort { need: p + 8, got: buf.len() })?
-                    .try_into().unwrap(),
+                    .ok_or(XpcError::TooShort {
+                        need: p + 8,
+                        got: buf.len(),
+                    })?
+                    .try_into()
+                    .unwrap(),
             );
             Ok((Value::Int64(n), p + 8))
         }
@@ -105,8 +130,10 @@ fn decode_value(buf: &[u8], pos: usize) -> Result<(Value, usize), XpcError> {
         TYPE_DATA => {
             let len = read_u32le(buf, p)? as usize;
             let start = p + 4;
-            buf.get(start..start + len)
-                .ok_or(XpcError::TooShort { need: start + len, got: buf.len() })?;
+            buf.get(start..start + len).ok_or(XpcError::TooShort {
+                need: start + len,
+                got: buf.len(),
+            })?;
             let data = buf[start..start + len].to_vec();
             Ok((Value::Data(data), start + pad4(len)))
         }
@@ -114,8 +141,10 @@ fn decode_value(buf: &[u8], pos: usize) -> Result<(Value, usize), XpcError> {
         TYPE_STRING => {
             let len = read_u32le(buf, p)? as usize; // includes NUL
             let start = p + 4;
-            buf.get(start..start + len)
-                .ok_or(XpcError::TooShort { need: start + len, got: buf.len() })?;
+            buf.get(start..start + len).ok_or(XpcError::TooShort {
+                need: start + len,
+                got: buf.len(),
+            })?;
             let raw = &buf[start..start + len];
             // strip trailing NUL(s)
             let s = std::str::from_utf8(raw.split(|&b| b == 0).next().unwrap_or(raw))
@@ -126,8 +155,10 @@ fn decode_value(buf: &[u8], pos: usize) -> Result<(Value, usize), XpcError> {
 
         TYPE_UUID => {
             let end = p + 16;
-            buf.get(p..end)
-                .ok_or(XpcError::TooShort { need: end, got: buf.len() })?;
+            buf.get(p..end).ok_or(XpcError::TooShort {
+                need: end,
+                got: buf.len(),
+            })?;
             let mut u = [0u8; 16];
             u.copy_from_slice(&buf[p..end]);
             Ok((Value::Uuid(u), end))
@@ -137,10 +168,10 @@ fn decode_value(buf: &[u8], pos: usize) -> Result<(Value, usize), XpcError> {
             // wire: total_size(4) | count(4) | items...
             // total_size = 4(count) + items_bytes
             let total_size = read_u32le(buf, p)? as usize;
-            let count      = read_u32le(buf, p + 4)? as usize;
-            let end        = p + 4 + total_size; // p + total_size_field(4) + total_size
-            let mut cur    = p + 8;
-            let mut items  = Vec::with_capacity(count);
+            let count = read_u32le(buf, p + 4)? as usize;
+            let end = p + 4 + total_size; // p + total_size_field(4) + total_size
+            let mut cur = p + 8;
+            let mut items = Vec::with_capacity(count);
             for _ in 0..count {
                 let (val, next) = decode_value(buf, cur)?;
                 items.push(val);
@@ -151,10 +182,10 @@ fn decode_value(buf: &[u8], pos: usize) -> Result<(Value, usize), XpcError> {
 
         TYPE_DICTIONARY => {
             let total_size = read_u32le(buf, p)? as usize;
-            let count      = read_u32le(buf, p + 4)? as usize;
-            let end        = p + 4 + total_size;
-            let mut cur    = p + 8;
-            let mut map    = HashMap::with_capacity(count);
+            let count = read_u32le(buf, p + 4)? as usize;
+            let end = p + 4 + total_size;
+            let mut cur = p + 8;
+            let mut map = HashMap::with_capacity(count);
             for _ in 0..count {
                 // Key: NUL-terminated string padded to 4 bytes
                 let nul = buf[cur..]
@@ -201,7 +232,7 @@ pub fn encode_message(msg: &Message) -> Vec<u8> {
     });
 
     let body_len = payload.as_ref().map_or(0, |p| p.len()) as u64;
-    let mut out  = Vec::with_capacity(24 + body_len as usize);
+    let mut out = Vec::with_capacity(24 + body_len as usize);
     out.extend_from_slice(&WRAPPER_MAGIC.to_le_bytes());
     out.extend_from_slice(&msg.flags.to_le_bytes());
     out.extend_from_slice(&body_len.to_le_bytes());
@@ -367,7 +398,10 @@ mod tests {
         let mut inner = HashMap::new();
         inner.insert("port".into(), Value::Uint64(58783));
         let mut outer = HashMap::new();
-        outer.insert("com.apple.coredevice.appservice".into(), Value::Dictionary(inner));
+        outer.insert(
+            "com.apple.coredevice.appservice".into(),
+            Value::Dictionary(inner),
+        );
         let msg = Message::with_body(5, Value::Dictionary(outer));
         let enc = encode_message(&msg);
         let (dec, _) = decode_message(&enc).unwrap();

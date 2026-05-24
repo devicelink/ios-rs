@@ -32,22 +32,30 @@ use crate::cmd::output::OutputMode;
 const SHIM: &str = "com.apple.os_trace_relay.shim.remote";
 
 pub fn run(
-    udid:    Option<&str>,
+    udid: Option<&str>,
     process: Option<&str>,
-    level:   Option<&str>,
-    output:  OutputMode,
+    level: Option<&str>,
+    output: OutputMode,
 ) -> Result<()> {
     let json = output.is_json();
     let mut session = open_session(udid, ConnectionMode::Rsd)?;
-    let mut stream  = session.connect_rsd_shim(SHIM).context("connect os_trace shim")?;
+    let mut stream = session
+        .connect_rsd_shim(SHIM)
+        .context("connect os_trace shim")?;
 
     // Send StartActivity request
     {
         let mut req = plist::Dictionary::new();
-        req.insert("Request".into(),       plist::Value::String("StartActivity".into()));
-        req.insert("Pid".into(),           plist::Value::Integer((-1i64).into()));
-        req.insert("MessageFilter".into(), plist::Value::Integer(0xFFFFi64.into()));
-        req.insert("StreamFlags".into(),   plist::Value::Integer(0x20i64.into()));
+        req.insert(
+            "Request".into(),
+            plist::Value::String("StartActivity".into()),
+        );
+        req.insert("Pid".into(), plist::Value::Integer((-1i64).into()));
+        req.insert(
+            "MessageFilter".into(),
+            plist::Value::Integer(0xFFFFi64.into()),
+        );
+        req.insert("StreamFlags".into(), plist::Value::Integer(0x20i64.into()));
         let mut body = Vec::new();
         plist::to_writer_xml(&mut body, &plist::Value::Dictionary(req))?;
         let len = body.len() as u32;
@@ -65,7 +73,9 @@ pub fn run(
         read_exact(&mut stream, &mut len_bytes).context("read plist length bytes")?;
         len_bytes.reverse();
         let mut plist_len: u64 = 0;
-        for b in &len_bytes { plist_len = (plist_len << 8) | *b as u64; }
+        for b in &len_bytes {
+            plist_len = (plist_len << 8) | *b as u64;
+        }
         let mut plist_buf = vec![0u8; plist_len as usize];
         read_exact(&mut stream, &mut plist_buf).context("read StartActivity response")?;
         let resp: plist::Value = plist::from_bytes(&plist_buf)?;
@@ -81,34 +91,41 @@ pub fn run(
     let mut stdout = std::io::BufWriter::new(std::io::stdout());
 
     while let Ok(entry) = read_entry(&mut stream) {
-        if entry.level_num < min_level { continue; }
+        if entry.level_num < min_level {
+            continue;
+        }
         if let Some(p) = process {
-            if !entry.process.to_lowercase().contains(&p.to_lowercase()) { continue; }
+            if !entry.process.to_lowercase().contains(&p.to_lowercase()) {
+                continue;
+            }
         }
 
         let line = if json {
             format!(
                 r#"{{"ts":"{ts}","pid":{pid},"level":"{lv}","process":{proc},"subsystem":{sub},"category":{cat},"message":{msg}}}"#,
-                ts   = entry.timestamp,
-                pid  = entry.pid,
-                lv   = entry.level,
+                ts = entry.timestamp,
+                pid = entry.pid,
+                lv = entry.level,
                 proc = json_str(&entry.process),
-                sub  = json_str(&entry.subsystem),
-                cat  = json_str(&entry.category),
-                msg  = json_str(&entry.message),
+                sub = json_str(&entry.subsystem),
+                cat = json_str(&entry.category),
+                msg = json_str(&entry.message),
             )
         } else {
             format!(
                 "{ts}  {pid:>6}  {lv:<8}  {proc:<20}  {msg}",
-                ts   = entry.timestamp,
-                pid  = entry.pid,
-                lv   = entry.level,
+                ts = entry.timestamp,
+                pid = entry.pid,
+                lv = entry.level,
                 proc = truncate(&entry.process, 20),
-                msg  = entry.message,
+                msg = entry.message,
             )
         };
 
-        if writeln!(stdout, "{line}").and_then(|_| stdout.flush()).is_err() {
+        if writeln!(stdout, "{line}")
+            .and_then(|_| stdout.flush())
+            .is_err()
+        {
             break;
         }
     }
@@ -118,21 +135,24 @@ pub fn run(
 // ── entry parsing ─────────────────────────────────────────────────────────────
 
 struct LogEntry {
-    pid:       u32,
+    pid: u32,
     timestamp: String,
-    level:     String,
+    level: String,
     level_num: u8,
-    process:   String,
+    process: String,
     subsystem: String,
-    category:  String,
-    message:   String,
+    category: String,
+    message: String,
 }
 
 fn read_entry(s: &mut ios_rs::usbmux::MuxSocket) -> std::io::Result<LogEntry> {
     let mut magic = [0u8; 1];
     read_exact(s, &mut magic)?;
     if magic[0] != 0x02 {
-        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "bad magic"));
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "bad magic",
+        ));
     }
     let mut len_buf = [0u8; 4];
     read_exact(s, &mut len_buf)?;
@@ -147,24 +167,24 @@ fn parse_entry(data: &[u8]) -> anyhow::Result<LogEntry> {
     if data.len() < 129 {
         anyhow::bail!("entry too short: {} bytes", data.len());
     }
-    let pid           = u32::from_le_bytes(data[9..13].try_into()?);
-    let procpath_len  = u16::from_le_bytes(data[37..39].try_into()?) as usize;
-    let time_sec      = u64::from_le_bytes(data[55..63].try_into()?);
-    let time_usec     = u32::from_le_bytes(data[63..67].try_into()?);
-    let level         = data[68];
+    let pid = u32::from_le_bytes(data[9..13].try_into()?);
+    let procpath_len = u16::from_le_bytes(data[37..39].try_into()?) as usize;
+    let time_sec = u64::from_le_bytes(data[55..63].try_into()?);
+    let time_usec = u32::from_le_bytes(data[63..67].try_into()?);
+    let level = data[68];
     let imagepath_len = u16::from_le_bytes(data[107..109].try_into()?) as usize;
-    let message_len   = u32::from_le_bytes(data[109..113].try_into()?) as usize;
+    let message_len = u32::from_le_bytes(data[109..113].try_into()?) as usize;
     let subsystem_len = u16::from_le_bytes(data[117..119].try_into()?) as usize;
-    let category_len  = u16::from_le_bytes(data[121..123].try_into()?) as usize;
+    let category_len = u16::from_le_bytes(data[121..123].try_into()?) as usize;
 
     let ts = format_timestamp(time_sec, time_usec);
 
     let mut off = 129;
-    let process   = read_cstring(data, &mut off, procpath_len);
-    let _image    = read_cstring(data, &mut off, imagepath_len);
-    let message   = read_cstring(data, &mut off, message_len);
+    let process = read_cstring(data, &mut off, procpath_len);
+    let _image = read_cstring(data, &mut off, imagepath_len);
+    let message = read_cstring(data, &mut off, message_len);
     let subsystem = read_cstring(data, &mut off, subsystem_len);
-    let category  = read_cstring(data, &mut off, category_len);
+    let category = read_cstring(data, &mut off, category_len);
 
     let process = basename(&process);
 
@@ -181,10 +201,16 @@ fn parse_entry(data: &[u8]) -> anyhow::Result<LogEntry> {
 }
 
 fn read_cstring(data: &[u8], off: &mut usize, len: usize) -> String {
-    if len == 0 || *off + len > data.len() { return String::new(); }
-    let slice = &data[*off .. *off + len];
+    if len == 0 || *off + len > data.len() {
+        return String::new();
+    }
+    let slice = &data[*off..*off + len];
     *off += len;
-    let s = if slice.last() == Some(&0) { &slice[..slice.len()-1] } else { slice };
+    let s = if slice.last() == Some(&0) {
+        &slice[..slice.len() - 1]
+    } else {
+        slice
+    };
     String::from_utf8_lossy(s).into_owned()
 }
 
@@ -195,18 +221,18 @@ fn level_name(l: u8) -> &'static str {
         0x02 => "Debug",
         0x10 => "Error",
         0x11 => "Fault",
-        _    => "Unknown",
+        _ => "Unknown",
     }
 }
 
 fn parse_level(s: &str) -> u8 {
     match s.to_lowercase().as_str() {
-        "debug"   => 0x00,
-        "info"    => 0x00,
+        "debug" => 0x00,
+        "info" => 0x00,
         "default" => 0x00,
-        "error"   => 0x10,
-        "fault"   => 0x11,
-        _         => 0x00,
+        "error" => 0x10,
+        "fault" => 0x11,
+        _ => 0x00,
     }
 }
 
@@ -215,7 +241,10 @@ fn format_timestamp(sec: u64, usec: u32) -> String {
     const APPLE_EPOCH_OFFSET: u64 = 978_307_200;
     let unix = sec.saturating_add(APPLE_EPOCH_OFFSET);
     let dt = std::time::UNIX_EPOCH + std::time::Duration::new(unix, usec * 1000);
-    let secs = dt.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
+    let secs = dt
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
     let h = (secs % 86400) / 3600;
     let m = (secs % 3600) / 60;
     let s = secs % 60;
@@ -227,7 +256,11 @@ fn basename(path: &str) -> String {
 }
 
 fn truncate(s: &str, n: usize) -> String {
-    if s.len() <= n { format!("{s:<n$}") } else { format!("{}…", &s[..n-1]) }
+    if s.len() <= n {
+        format!("{s:<n$}")
+    } else {
+        format!("{}…", &s[..n - 1])
+    }
 }
 
 fn json_str(s: &str) -> String {
@@ -238,8 +271,13 @@ fn read_exact(s: &mut ios_rs::usbmux::MuxSocket, buf: &mut [u8]) -> std::io::Res
     let mut done = 0;
     while done < buf.len() {
         match s.read(&mut buf[done..]) {
-            Ok(0)  => return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "eof")),
-            Ok(n)  => done += n,
+            Ok(0) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    "eof",
+                ))
+            }
+            Ok(n) => done += n,
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
             Err(e) => return Err(e),
         }

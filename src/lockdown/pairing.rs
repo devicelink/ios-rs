@@ -36,7 +36,9 @@ use crate::usbmux::Connection as MuxConn;
 /// waiting for the trust dialog to be accepted — callers should retry.
 pub fn pair(device_id: u32, udid: &str) -> Result<(), Error> {
     let mut usbmux = MuxConn::open()?;
-    let buid = usbmux.read_buid().map_err(|e| err(format!("read BUID: {e}")))?;
+    let buid = usbmux
+        .read_buid()
+        .map_err(|e| err(format!("read BUID: {e}")))?;
 
     // Plain (pre-TLS) lockdown session to read device values and send Pair.
     let mut session = super::LockdownSession::connect(device_id)?;
@@ -57,26 +59,36 @@ pub fn pair(device_id: u32, udid: &str) -> Result<(), Error> {
 
     // Build pair-record dict for the Pair request (sent to lockdownd).
     let mut pair_record = plist::Dictionary::new();
-    pair_record.insert("DeviceCertificate".into(), plist::Value::Data(device_cert.clone()));
-    pair_record.insert("HostCertificate".into(),   plist::Value::Data(host_cert.clone()));
-    pair_record.insert("RootCertificate".into(),   plist::Value::Data(root_cert.clone()));
-    pair_record.insert("SystemBUID".into(),        plist::Value::String(buid.clone()));
-    pair_record.insert("HostID".into(),            plist::Value::String(host_id.clone()));
+    pair_record.insert(
+        "DeviceCertificate".into(),
+        plist::Value::Data(device_cert.clone()),
+    );
+    pair_record.insert(
+        "HostCertificate".into(),
+        plist::Value::Data(host_cert.clone()),
+    );
+    pair_record.insert(
+        "RootCertificate".into(),
+        plist::Value::Data(root_cert.clone()),
+    );
+    pair_record.insert("SystemBUID".into(), plist::Value::String(buid.clone()));
+    pair_record.insert("HostID".into(), plist::Value::String(host_id.clone()));
 
     let mut opts = plist::Dictionary::new();
     opts.insert("ExtendedPairingErrors".into(), plist::Value::Boolean(true));
 
     let mut req = plist::Dictionary::new();
-    req.insert("Label".into(),           plist::Value::String("ios-rs".into()));
+    req.insert("Label".into(), plist::Value::String("ios-rs".into()));
     req.insert("ProtocolVersion".into(), plist::Value::String("2".into()));
-    req.insert("Request".into(),         plist::Value::String("Pair".into()));
-    req.insert("PairRecord".into(),      plist::Value::Dictionary(pair_record));
-    req.insert("PairingOptions".into(),  plist::Value::Dictionary(opts));
+    req.insert("Request".into(), plist::Value::String("Pair".into()));
+    req.insert("PairRecord".into(), plist::Value::Dictionary(pair_record));
+    req.insert("PairingOptions".into(), plist::Value::Dictionary(opts));
 
     session.send_raw(&plist::Value::Dictionary(req))?;
     let resp = session.recv_raw()?;
 
-    let resp_dict = resp.as_dictionary()
+    let resp_dict = resp
+        .as_dictionary()
         .ok_or_else(|| err("Pair response not a dictionary".into()))?;
 
     if let Some(plist::Value::String(e)) = resp_dict.get("Error") {
@@ -96,20 +108,21 @@ pub fn pair(device_id: u32, udid: &str) -> Result<(), Error> {
     // Build the full save-record plist (contains private keys + EscrowBag).
     let mut save_rec = plist::Dictionary::new();
     save_rec.insert("DeviceCertificate".into(), plist::Value::Data(device_cert));
-    save_rec.insert("HostPrivateKey".into(),    plist::Value::Data(host_key));
-    save_rec.insert("HostCertificate".into(),   plist::Value::Data(host_cert));
-    save_rec.insert("RootPrivateKey".into(),    plist::Value::Data(root_key));
-    save_rec.insert("RootCertificate".into(),   plist::Value::Data(root_cert));
-    save_rec.insert("EscrowBag".into(),         plist::Value::Data(escrow_bag));
-    save_rec.insert("WiFiMACAddress".into(),    plist::Value::String(wifi_mac));
-    save_rec.insert("HostID".into(),            plist::Value::String(host_id));
-    save_rec.insert("SystemBUID".into(),        plist::Value::String(buid));
+    save_rec.insert("HostPrivateKey".into(), plist::Value::Data(host_key));
+    save_rec.insert("HostCertificate".into(), plist::Value::Data(host_cert));
+    save_rec.insert("RootPrivateKey".into(), plist::Value::Data(root_key));
+    save_rec.insert("RootCertificate".into(), plist::Value::Data(root_cert));
+    save_rec.insert("EscrowBag".into(), plist::Value::Data(escrow_bag));
+    save_rec.insert("WiFiMACAddress".into(), plist::Value::String(wifi_mac));
+    save_rec.insert("HostID".into(), plist::Value::String(host_id));
+    save_rec.insert("SystemBUID".into(), plist::Value::String(buid));
 
     let mut raw = Vec::new();
     plist::to_writer_xml(&mut raw, &plist::Value::Dictionary(save_rec))?;
 
     let mut usbmux2 = MuxConn::open()?;
-    usbmux2.save_pair_record(udid, raw)
+    usbmux2
+        .save_pair_record(udid, raw)
         .map_err(|e| err(format!("save pair record: {e}")))?;
 
     Ok(())
@@ -125,15 +138,17 @@ pub fn pair(device_id: u32, udid: &str) -> Result<(), Error> {
 ///   openssl x509  -in org.pem -out cert.pem
 ///   openssl pkey  -in org.pem -out key.pem
 pub fn pair_supervised(
-    device_id:          u32,
-    udid:               &str,
+    device_id: u32,
+    udid: &str,
     supervision_cert_der: &[u8],
-    supervision_key_pem:  &[u8],
+    supervision_key_pem: &[u8],
 ) -> Result<(), Error> {
     let supervision_key = parse_rsa_key_bytes(supervision_key_pem)?;
 
     let mut usbmux = MuxConn::open()?;
-    let buid = usbmux.read_buid().map_err(|e| err(format!("read BUID: {e}")))?;
+    let buid = usbmux
+        .read_buid()
+        .map_err(|e| err(format!("read BUID: {e}")))?;
 
     let mut session = super::LockdownSession::connect(device_id)?;
 
@@ -152,27 +167,43 @@ pub fn pair_supervised(
     let host_id = random_upper_uuid();
 
     let mut pair_record = plist::Dictionary::new();
-    pair_record.insert("DeviceCertificate".into(), plist::Value::Data(device_cert.clone()));
-    pair_record.insert("HostCertificate".into(),   plist::Value::Data(host_cert.clone()));
-    pair_record.insert("RootCertificate".into(),   plist::Value::Data(root_cert.clone()));
-    pair_record.insert("SystemBUID".into(),        plist::Value::String(buid.clone()));
-    pair_record.insert("HostID".into(),            plist::Value::String(host_id.clone()));
+    pair_record.insert(
+        "DeviceCertificate".into(),
+        plist::Value::Data(device_cert.clone()),
+    );
+    pair_record.insert(
+        "HostCertificate".into(),
+        plist::Value::Data(host_cert.clone()),
+    );
+    pair_record.insert(
+        "RootCertificate".into(),
+        plist::Value::Data(root_cert.clone()),
+    );
+    pair_record.insert("SystemBUID".into(), plist::Value::String(buid.clone()));
+    pair_record.insert("HostID".into(), plist::Value::String(host_id.clone()));
 
     // First Pair request — include SupervisorCertificate in PairingOptions.
     let mut opts = plist::Dictionary::new();
-    opts.insert("SupervisorCertificate".into(), plist::Value::Data(supervision_cert_der.to_vec()));
+    opts.insert(
+        "SupervisorCertificate".into(),
+        plist::Value::Data(supervision_cert_der.to_vec()),
+    );
     opts.insert("ExtendedPairingErrors".into(), plist::Value::Boolean(true));
 
     let mut req = plist::Dictionary::new();
-    req.insert("Label".into(),           plist::Value::String("ios-rs".into()));
+    req.insert("Label".into(), plist::Value::String("ios-rs".into()));
     req.insert("ProtocolVersion".into(), plist::Value::String("2".into()));
-    req.insert("Request".into(),         plist::Value::String("Pair".into()));
-    req.insert("PairRecord".into(),      plist::Value::Dictionary(pair_record.clone()));
-    req.insert("PairingOptions".into(),  plist::Value::Dictionary(opts));
+    req.insert("Request".into(), plist::Value::String("Pair".into()));
+    req.insert(
+        "PairRecord".into(),
+        plist::Value::Dictionary(pair_record.clone()),
+    );
+    req.insert("PairingOptions".into(), plist::Value::Dictionary(opts));
 
     session.send_raw(&plist::Value::Dictionary(req))?;
     let resp1 = session.recv_raw()?;
-    let resp1_dict = resp1.as_dictionary()
+    let resp1_dict = resp1
+        .as_dictionary()
         .ok_or_else(|| err("first Pair response not a dictionary".into()))?;
 
     // Device responds with MCChallengeRequired — extract the challenge bytes.
@@ -186,15 +217,16 @@ pub fn pair_supervised(
     opts2.insert("ChallengeResponse".into(), plist::Value::Data(signed));
 
     let mut req2 = plist::Dictionary::new();
-    req2.insert("Label".into(),           plist::Value::String("ios-rs".into()));
+    req2.insert("Label".into(), plist::Value::String("ios-rs".into()));
     req2.insert("ProtocolVersion".into(), plist::Value::String("2".into()));
-    req2.insert("Request".into(),         plist::Value::String("Pair".into()));
-    req2.insert("PairRecord".into(),      plist::Value::Dictionary(pair_record));
-    req2.insert("PairingOptions".into(),  plist::Value::Dictionary(opts2));
+    req2.insert("Request".into(), plist::Value::String("Pair".into()));
+    req2.insert("PairRecord".into(), plist::Value::Dictionary(pair_record));
+    req2.insert("PairingOptions".into(), plist::Value::Dictionary(opts2));
 
     session.send_raw(&plist::Value::Dictionary(req2))?;
     let resp2 = session.recv_raw()?;
-    let resp2_dict = resp2.as_dictionary()
+    let resp2_dict = resp2
+        .as_dictionary()
         .ok_or_else(|| err("second Pair response not a dictionary".into()))?;
 
     if let Some(plist::Value::String(e)) = resp2_dict.get("Error") {
@@ -208,20 +240,21 @@ pub fn pair_supervised(
 
     let mut save_rec = plist::Dictionary::new();
     save_rec.insert("DeviceCertificate".into(), plist::Value::Data(device_cert));
-    save_rec.insert("HostPrivateKey".into(),    plist::Value::Data(host_key));
-    save_rec.insert("HostCertificate".into(),   plist::Value::Data(host_cert));
-    save_rec.insert("RootPrivateKey".into(),    plist::Value::Data(root_key));
-    save_rec.insert("RootCertificate".into(),   plist::Value::Data(root_cert));
-    save_rec.insert("EscrowBag".into(),         plist::Value::Data(escrow_bag));
-    save_rec.insert("WiFiMACAddress".into(),    plist::Value::String(wifi_mac));
-    save_rec.insert("HostID".into(),            plist::Value::String(host_id));
-    save_rec.insert("SystemBUID".into(),        plist::Value::String(buid));
+    save_rec.insert("HostPrivateKey".into(), plist::Value::Data(host_key));
+    save_rec.insert("HostCertificate".into(), plist::Value::Data(host_cert));
+    save_rec.insert("RootPrivateKey".into(), plist::Value::Data(root_key));
+    save_rec.insert("RootCertificate".into(), plist::Value::Data(root_cert));
+    save_rec.insert("EscrowBag".into(), plist::Value::Data(escrow_bag));
+    save_rec.insert("WiFiMACAddress".into(), plist::Value::String(wifi_mac));
+    save_rec.insert("HostID".into(), plist::Value::String(host_id));
+    save_rec.insert("SystemBUID".into(), plist::Value::String(buid));
 
     let mut raw = Vec::new();
     plist::to_writer_xml(&mut raw, &plist::Value::Dictionary(save_rec))?;
 
     let mut usbmux2 = MuxConn::open()?;
-    usbmux2.save_pair_record(udid, raw)
+    usbmux2
+        .save_pair_record(udid, raw)
         .map_err(|e| err(format!("save supervised pair record: {e}")))?;
 
     Ok(())
@@ -232,7 +265,7 @@ pub fn unpair(device_id: u32, udid: &str) -> Result<(), Error> {
     // First tell lockdownd (best-effort — may fail if already unpaired)
     if let Ok(mut session) = super::LockdownSession::connect(device_id) {
         let mut req = plist::Dictionary::new();
-        req.insert("Label".into(),   plist::Value::String("ios-rs".into()));
+        req.insert("Label".into(), plist::Value::String("ios-rs".into()));
         req.insert("Request".into(), plist::Value::String("Unpair".into()));
         // Fill pair record fields if we can read them
         if let Ok(raw) = {
@@ -241,8 +274,11 @@ pub fn unpair(device_id: u32, udid: &str) -> Result<(), Error> {
         } {
             if let Ok(pr) = super::PairRecord::from_plist_bytes(&raw) {
                 let mut pr_dict = plist::Dictionary::new();
-                pr_dict.insert("HostID".into(),    plist::Value::String(pr.host_id.clone()));
-                pr_dict.insert("SystemBUID".into(), plist::Value::String(pr.system_buid.clone()));
+                pr_dict.insert("HostID".into(), plist::Value::String(pr.host_id.clone()));
+                pr_dict.insert(
+                    "SystemBUID".into(),
+                    plist::Value::String(pr.system_buid.clone()),
+                );
                 req.insert("PairRecord".into(), plist::Value::Dictionary(pr_dict));
             }
         }
@@ -267,19 +303,20 @@ fn create_pairing_certs(
     let mut rng = rand_core_os();
 
     // Root key pair
-    let root_key = RsaPrivateKey::new(&mut rng, 2048)
-        .map_err(|e| err(format!("root keygen: {e}")))?;
+    let root_key =
+        RsaPrivateKey::new(&mut rng, 2048).map_err(|e| err(format!("root keygen: {e}")))?;
 
     // Host key pair
-    let host_key = RsaPrivateKey::new(&mut rng, 2048)
-        .map_err(|e| err(format!("host keygen: {e}")))?;
+    let host_key =
+        RsaPrivateKey::new(&mut rng, 2048).map_err(|e| err(format!("host keygen: {e}")))?;
 
     // Device public key from PEM (PKCS#1 format)
     let device_pub = rsa::RsaPublicKey::from_pkcs1_pem(
         std::str::from_utf8(device_pub_pem).map_err(|_| err("device key not utf8".into()))?,
-    ).map_err(|e| err(format!("parse device public key: {e}")))?;
+    )
+    .map_err(|e| err(format!("parse device public key: {e}")))?;
 
-    let now  = unix_now();
+    let now = unix_now();
     let then = now + 10 * 365 * 24 * 3600;
 
     // Root cert (self-signed, isCA=true)
@@ -301,41 +338,43 @@ fn create_pairing_certs(
     )?;
 
     // Device cert (device public key signed by root, isCA=false)
-    let device_cert = build_cert(
-        &device_pub,
-        CertKind::Leaf,
-        &root_key,
-        now,
-        then,
-    )?;
+    let device_cert = build_cert(&device_pub, CertKind::Leaf, &root_key, now, then)?;
 
     Ok((
         pem_encode("CERTIFICATE", &root_cert),
         pem_encode("CERTIFICATE", &host_cert),
         pem_encode("CERTIFICATE", &device_cert),
-        root_key.to_pkcs1_pem(Default::default())
+        root_key
+            .to_pkcs1_pem(Default::default())
             .map_err(|e| err(format!("root key pem: {e}")))?
-            .as_bytes().to_vec(),
-        host_key.to_pkcs1_pem(Default::default())
+            .as_bytes()
+            .to_vec(),
+        host_key
+            .to_pkcs1_pem(Default::default())
             .map_err(|e| err(format!("host key pem: {e}")))?
-            .as_bytes().to_vec(),
+            .as_bytes()
+            .to_vec(),
     ))
 }
 
 #[derive(Copy, Clone)]
-enum CertKind { Root, Leaf }
+enum CertKind {
+    Root,
+    Leaf,
+}
 
 /// Build a DER-encoded X.509 v3 certificate with SHA1WithRSA, signed by `signing_key`.
 /// Subject and issuer are both empty sequences (as iOS pairing requires).
 fn build_cert(
-    pub_key:     &rsa::RsaPublicKey,
-    kind:        CertKind,
+    pub_key: &rsa::RsaPublicKey,
+    kind: CertKind,
     signing_key: &RsaPrivateKey,
-    not_before:  u64,
-    not_after:   u64,
+    not_before: u64,
+    not_after: u64,
 ) -> Result<Vec<u8>, Error> {
     // SubjectPublicKeyInfo DER for the subject key
-    let spki_der = pub_key.to_public_key_der()
+    let spki_der = pub_key
+        .to_public_key_der()
         .map_err(|e| err(format!("encode spki: {e}")))?;
 
     // SHA1 of the raw inner bit-string (same as go-ios computeSKIKey)
@@ -352,10 +391,7 @@ fn build_cert(
         // issuer empty SEQUENCE
         &der_seq(&[]),
         // validity
-        &der_seq(&[
-            &der_utc_time(not_before),
-            &der_utc_time(not_after),
-        ]),
+        &der_seq(&[&der_utc_time(not_before), &der_utc_time(not_after)]),
         // subject empty SEQUENCE
         &der_seq(&[]),
         // subjectPublicKeyInfo (already DER)
@@ -402,7 +438,7 @@ fn build_extensions(ski: &[u8; 20], kind: CertKind) -> Vec<Vec<u8>> {
             let bc_inner = der_seq(&[&der_bool(true)]);
             exts.push(der_seq(&[
                 &der_oid(&[2, 5, 29, 19]),
-                &der_bool(true),  // critical
+                &der_bool(true), // critical
                 &der_tag(0x04, &bc_inner),
             ]));
         }
@@ -413,7 +449,7 @@ fn build_extensions(ski: &[u8; 20], kind: CertKind) -> Vec<Vec<u8>> {
             let ku_bits = der_tag(0x03, &[0x05, 0xa0]);
             exts.push(der_seq(&[
                 &der_oid(&[2, 5, 29, 15]),
-                &der_bool(true),  // critical
+                &der_bool(true), // critical
                 &der_tag(0x04, &ku_bits),
             ]));
         }
@@ -445,7 +481,9 @@ fn der_seq(items: &[&[u8]]) -> Vec<u8> {
     der_tag(0x30, &body)
 }
 
-fn der_ctx(n: u8, content: &[u8]) -> Vec<u8> { der_tag(0xa0 | n, content) }
+fn der_ctx(n: u8, content: &[u8]) -> Vec<u8> {
+    der_tag(0xa0 | n, content)
+}
 
 fn der_int(v: &[u8]) -> Vec<u8> {
     // Prepend 0x00 if high bit set (to keep it positive)
@@ -454,7 +492,9 @@ fn der_int(v: &[u8]) -> Vec<u8> {
     der_tag(0x02, &body)
 }
 
-fn der_bool(b: bool) -> Vec<u8> { der_tag(0x01, &[if b { 0xff } else { 0x00 }]) }
+fn der_bool(b: bool) -> Vec<u8> {
+    der_tag(0x01, &[if b { 0xff } else { 0x00 }])
+}
 
 fn der_oid(arcs: &[u32]) -> Vec<u8> {
     let mut body = Vec::new();
@@ -483,7 +523,7 @@ fn der_utc_time(unix: u64) -> Vec<u8> {
     let secs_per_hour = 3600u64;
     // Days since 1970-01-01
     let days = unix / secs_per_day;
-    let rem  = unix % secs_per_day;
+    let rem = unix % secs_per_day;
     let h = rem / secs_per_hour;
     let m = (rem % secs_per_hour) / 60;
     let s = rem % 60;
@@ -524,13 +564,17 @@ fn extract_spki_bits(spki: &[u8]) -> Option<&[u8]> {
 }
 
 fn peel_tag(buf: &[u8], expected: u8) -> Option<(&[u8], &[u8])> {
-    if buf.first() != Some(&expected) { return None; }
+    if buf.first() != Some(&expected) {
+        return None;
+    }
     let (content, rest) = peel_length(&buf[1..])?;
     Some((content, rest))
 }
 
 fn peel_tlv(buf: &[u8]) -> Option<(&[u8], &[u8])> {
-    if buf.is_empty() { return None; }
+    if buf.is_empty() {
+        return None;
+    }
     let (content, rest) = peel_length(&buf[1..])?;
     Some((content, rest))
 }
@@ -541,13 +585,19 @@ fn peel_length(buf: &[u8]) -> Option<(&[u8], &[u8])> {
         (first as usize, 1)
     } else {
         let n = (first & 0x7f) as usize;
-        if buf.len() < 1 + n { return None; }
+        if buf.len() < 1 + n {
+            return None;
+        }
         let mut len = 0usize;
-        for &b in &buf[1..1 + n] { len = (len << 8) | b as usize; }
+        for &b in &buf[1..1 + n] {
+            len = (len << 8) | b as usize;
+        }
         (len, 1 + n)
     };
     let end = start + len;
-    if buf.len() < end { return None; }
+    if buf.len() < end {
+        return None;
+    }
     Some((&buf[start..end], &buf[end..]))
 }
 
@@ -557,22 +607,41 @@ fn days_to_ymd(mut days: u64) -> (u64, u64, u64) {
     loop {
         let leap = is_leap(y);
         let dy = if leap { 366 } else { 365 };
-        if days < dy { break; }
+        if days < dy {
+            break;
+        }
         days -= dy;
         y += 1;
     }
     let leap = is_leap(y);
-    let months = [31u64, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let months = [
+        31u64,
+        if leap { 29 } else { 28 },
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
+    ];
     let mut m = 1u64;
     for &dm in &months {
-        if days < dm { break; }
+        if days < dm {
+            break;
+        }
         days -= dm;
         m += 1;
     }
     (y, m, days + 1)
 }
 
-fn is_leap(y: u64) -> bool { y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) }
+fn is_leap(y: u64) -> bool {
+    y % 4 == 0 && (y % 100 != 0 || y % 400 == 0)
+}
 
 fn pem_encode(label: &str, der: &[u8]) -> Vec<u8> {
     let b64 = base64_encode(der);
@@ -590,11 +659,11 @@ fn base64_encode(input: &[u8]) -> String {
     let mut out = String::new();
     let mut i = 0;
     while i + 3 <= input.len() {
-        let b = (input[i] as u32) << 16 | (input[i+1] as u32) << 8 | input[i+2] as u32;
+        let b = (input[i] as u32) << 16 | (input[i + 1] as u32) << 8 | input[i + 2] as u32;
         out.push(TABLE[((b >> 18) & 63) as usize] as char);
         out.push(TABLE[((b >> 12) & 63) as usize] as char);
-        out.push(TABLE[((b >>  6) & 63) as usize] as char);
-        out.push(TABLE[((b      ) & 63) as usize] as char);
+        out.push(TABLE[((b >> 6) & 63) as usize] as char);
+        out.push(TABLE[((b) & 63) as usize] as char);
         i += 3;
     }
     match input.len() - i {
@@ -605,10 +674,10 @@ fn base64_encode(input: &[u8]) -> String {
             out.push_str("==");
         }
         2 => {
-            let b = (input[i] as u32) << 16 | (input[i+1] as u32) << 8;
+            let b = (input[i] as u32) << 16 | (input[i + 1] as u32) << 8;
             out.push(TABLE[((b >> 18) & 63) as usize] as char);
             out.push(TABLE[((b >> 12) & 63) as usize] as char);
-            out.push(TABLE[((b >>  6) & 63) as usize] as char);
+            out.push(TABLE[((b >> 6) & 63) as usize] as char);
             out.push('=');
         }
         _ => {}
@@ -617,12 +686,18 @@ fn base64_encode(input: &[u8]) -> String {
 }
 
 fn unix_now() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
 }
 
 fn random_upper_uuid() -> String {
     let t = unix_now() as u128 * 1_000_000
-        + SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().subsec_micros() as u128;
+        + SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .subsec_micros() as u128;
     let b = t.to_le_bytes();
     format!(
         "{:02X}{:02X}{:02X}{:02X}-{:02X}{:02X}-{:02X}{:02X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}",
@@ -633,21 +708,24 @@ fn random_upper_uuid() -> String {
     )
 }
 
-fn rand_core_os() -> rand::rngs::OsRng { rand::rngs::OsRng }
+fn rand_core_os() -> rand::rngs::OsRng {
+    rand::rngs::OsRng
+}
 
-fn err(msg: String) -> Error { Error::Lockdown(msg) }
+fn err(msg: String) -> Error {
+    Error::Lockdown(msg)
+}
 
 // ── supervised pairing helpers ────────────────────────────────────────────────
 
 /// Extract the PairingChallenge bytes from a `MCChallengeRequired` lockdownd response.
 fn extract_pairing_challenge(resp: &plist::Dictionary) -> Result<Vec<u8>, Error> {
-    let error = resp.get("Error")
-        .and_then(|v| v.as_string())
-        .unwrap_or("");
+    let error = resp.get("Error").and_then(|v| v.as_string()).unwrap_or("");
     if error != "MCChallengeRequired" {
         return Err(err(format!("expected MCChallengeRequired, got: {error:?}")));
     }
-    let ext = resp.get("ExtendedResponse")
+    let ext = resp
+        .get("ExtendedResponse")
         .and_then(|v| v.as_dictionary())
         .ok_or_else(|| err("missing ExtendedResponse".into()))?;
     match ext.get("PairingChallenge") {
@@ -661,14 +739,23 @@ pub fn parse_rsa_key_bytes(bytes: &[u8]) -> Result<RsaPrivateKey, Error> {
     // PEM path
     if let Ok(s) = std::str::from_utf8(bytes) {
         if s.contains("-----") {
-            if let Ok(k) = rsa::pkcs8::DecodePrivateKey::from_pkcs8_pem(s) { return Ok(k); }
-            if let Ok(k) = rsa::pkcs1::DecodeRsaPrivateKey::from_pkcs1_pem(s) { return Ok(k); }
+            if let Ok(k) = rsa::pkcs8::DecodePrivateKey::from_pkcs8_pem(s) {
+                return Ok(k);
+            }
+            if let Ok(k) = rsa::pkcs1::DecodeRsaPrivateKey::from_pkcs1_pem(s) {
+                return Ok(k);
+            }
         }
     }
     // DER path — PKCS#8 first, then PKCS#1
-    if let Ok(k) = rsa::pkcs8::DecodePrivateKey::from_pkcs8_der(bytes) { return Ok(k); }
-    rsa::pkcs1::DecodeRsaPrivateKey::from_pkcs1_der(bytes)
-        .map_err(|e| err(format!("parse supervision key (tried PEM+PKCS8+PKCS1 DER): {e}")))
+    if let Ok(k) = rsa::pkcs8::DecodePrivateKey::from_pkcs8_der(bytes) {
+        return Ok(k);
+    }
+    rsa::pkcs1::DecodeRsaPrivateKey::from_pkcs1_der(bytes).map_err(|e| {
+        err(format!(
+            "parse supervision key (tried PEM+PKCS8+PKCS1 DER): {e}"
+        ))
+    })
 }
 
 /// Build a PKCS7 SignedData (CMS) message signing `content` with `key` and `cert_der`.
@@ -679,9 +766,9 @@ pub fn parse_rsa_key_bytes(bytes: &[u8]) -> Result<RsaPrivateKey, Error> {
 ///   - Signed attributes: contentType + messageDigest
 ///   - RSA-SHA1 signature over DER(signedAttrs SET)
 pub fn build_pkcs7_signed_data(
-    content:  &[u8],
+    content: &[u8],
     cert_der: &[u8],
-    key:      &RsaPrivateKey,
+    key: &RsaPrivateKey,
 ) -> Result<Vec<u8>, Error> {
     // Extract issuer and serialNumber DER from the cert
     let (issuer_der, serial_der) = extract_issuer_serial(cert_der)?;
@@ -696,13 +783,13 @@ pub fn build_pkcs7_signed_data(
     // Build signed attributes SET (for signing, use tag 0x31 SET)
     // Attribute 1: contentType = pkcs7-data
     let attr_content_type = der_seq(&[
-        &der_oid(&[1, 2, 840, 113549, 1, 9, 3]),        // id-contentType
-        &der_tag(0x31, &der_oid(&[1, 2, 840, 113549, 1, 7, 1])),  // SET { pkcs7-data }
+        &der_oid(&[1, 2, 840, 113549, 1, 9, 3]), // id-contentType
+        &der_tag(0x31, &der_oid(&[1, 2, 840, 113549, 1, 7, 1])), // SET { pkcs7-data }
     ]);
     // Attribute 2: messageDigest = SHA1(content)
     let attr_message_digest = der_seq(&[
-        &der_oid(&[1, 2, 840, 113549, 1, 9, 4]),         // id-messageDigest
-        &der_tag(0x31, &der_tag(0x04, &digest)),          // SET { OCTET STRING(digest) }
+        &der_oid(&[1, 2, 840, 113549, 1, 9, 4]), // id-messageDigest
+        &der_tag(0x31, &der_tag(0x04, &digest)), // SET { OCTET STRING(digest) }
     ]);
 
     // DER SET of signed attributes (tag 0x31 for signing purposes)
@@ -719,33 +806,35 @@ pub fn build_pkcs7_signed_data(
 
     // Build SignerInfo
     let signer_info = der_seq(&[
-        &der_int(&[1]),          // version
-        &der_seq(&[              // issuerAndSerialNumber
+        &der_int(&[1]), // version
+        &der_seq(&[
+            // issuerAndSerialNumber
             &issuer_der,
             &serial_der,
         ]),
-        &sha1_oid(),             // digestAlgorithm
-        &signed_attrs_implicit,  // signedAttrs [0]
-        &sha1_with_rsa_oid(),    // signatureAlgorithm
+        &sha1_oid(),                // digestAlgorithm
+        &signed_attrs_implicit,     // signedAttrs [0]
+        &sha1_with_rsa_oid(),       // signatureAlgorithm
         &der_tag(0x04, &sig_bytes), // signature OCTET STRING
     ]);
 
     // Build SignedData
     let signed_data = der_seq(&[
-        &der_int(&[1]),          // version
-        &der_tag(0x31, &sha1_oid()),  // digestAlgorithms SET
-        &der_seq(&[              // contentInfo (data with embedded content)
-            &der_oid(&[1, 2, 840, 113549, 1, 7, 1]),  // pkcs7-data
-            &der_tag(0xa0, &der_tag(0x04, content)),   // [0] EXPLICIT OCTET STRING
+        &der_int(&[1]),              // version
+        &der_tag(0x31, &sha1_oid()), // digestAlgorithms SET
+        &der_seq(&[
+            // contentInfo (data with embedded content)
+            &der_oid(&[1, 2, 840, 113549, 1, 7, 1]), // pkcs7-data
+            &der_tag(0xa0, &der_tag(0x04, content)), // [0] EXPLICIT OCTET STRING
         ]),
-        &der_tag(0xa0, cert_der),  // certificates [0] IMPLICIT
-        &der_tag(0x31, &signer_info),  // signerInfos SET
+        &der_tag(0xa0, cert_der),     // certificates [0] IMPLICIT
+        &der_tag(0x31, &signer_info), // signerInfos SET
     ]);
 
     // Wrap in ContentInfo
     let content_info = der_seq(&[
-        &der_oid(&[1, 2, 840, 113549, 1, 7, 2]),  // signedData OID
-        &der_tag(0xa0, &signed_data),              // [0] EXPLICIT content
+        &der_oid(&[1, 2, 840, 113549, 1, 7, 2]), // signedData OID
+        &der_tag(0xa0, &signed_data),            // [0] EXPLICIT content
     ]);
 
     Ok(content_info)
@@ -753,8 +842,8 @@ pub fn build_pkcs7_signed_data(
 
 fn sha1_oid() -> Vec<u8> {
     der_seq(&[
-        &der_oid(&[1, 3, 14, 3, 2, 26]),  // SHA1
-        &[0x05, 0x00],                      // NULL
+        &der_oid(&[1, 3, 14, 3, 2, 26]), // SHA1
+        &[0x05, 0x00],                   // NULL
     ])
 }
 
@@ -762,8 +851,8 @@ fn sha1_oid() -> Vec<u8> {
 fn extract_issuer_serial(cert_der: &[u8]) -> Result<(Vec<u8>, Vec<u8>), Error> {
     // Certificate ::= SEQUENCE { TBSCertificate, ... }
     // peel_tag returns (content_inside, rest_after_TLV)
-    let (cert_content, _) = peel_tag(cert_der, 0x30)
-        .ok_or_else(|| err("cert: bad outer SEQUENCE".into()))?;
+    let (cert_content, _) =
+        peel_tag(cert_der, 0x30).ok_or_else(|| err("cert: bad outer SEQUENCE".into()))?;
     // TBSCertificate ::= SEQUENCE { ... }
     let (tbs_body, _) = peel_tag(cert_content, 0x30)
         .ok_or_else(|| err("cert: bad TBSCertificate SEQUENCE".into()))?;
@@ -778,26 +867,30 @@ fn extract_issuer_serial(cert_der: &[u8]) -> Result<(Vec<u8>, Vec<u8>), Error> {
 
     // serialNumber INTEGER (keep raw TLV)
     let serial_end = {
-        let (content, _) = peel_tag(pos, 0x02)
-            .ok_or_else(|| err("cert: bad serial".into()))?;
+        let (content, _) = peel_tag(pos, 0x02).ok_or_else(|| err("cert: bad serial".into()))?;
         // raw bytes = tag + length + content
         let header_len = pos.len() - content.len() - {
             // find where content starts
             let len = content.len();
-            if len < 0x80 { 2 } else if len < 0x100 { 3 } else { 4 }
+            if len < 0x80 {
+                2
+            } else if len < 0x100 {
+                3
+            } else {
+                4
+            }
         };
         header_len + content.len()
     };
     // Recompute properly: scan for the end of the INTEGER TLV
     let serial_der = {
-        let (_, rest) = peel_tag(pos, 0x02)
-            .ok_or_else(|| err("cert: bad serial INTEGER".into()))?;
+        let (_, rest) =
+            peel_tag(pos, 0x02).ok_or_else(|| err("cert: bad serial INTEGER".into()))?;
         let used = pos.len() - rest.len();
         pos[..used].to_vec()
     };
     // advance pos
-    let (_, pos) = peel_tag(pos, 0x02)
-        .ok_or_else(|| err("cert: bad serial advance".into()))?;
+    let (_, pos) = peel_tag(pos, 0x02).ok_or_else(|| err("cert: bad serial advance".into()))?;
     // pos is now at signatureAlgorithm
 
     // Skip signatureAlgorithm SEQUENCE
@@ -805,8 +898,8 @@ fn extract_issuer_serial(cert_der: &[u8]) -> Result<(Vec<u8>, Vec<u8>), Error> {
 
     // issuer SEQUENCE (keep raw TLV)
     let issuer_der = {
-        let (_, rest) = peel_tag(pos, 0x30)
-            .ok_or_else(|| err("cert: bad issuer SEQUENCE".into()))?;
+        let (_, rest) =
+            peel_tag(pos, 0x30).ok_or_else(|| err("cert: bad issuer SEQUENCE".into()))?;
         let used = pos.len() - rest.len();
         pos[..used].to_vec()
     };

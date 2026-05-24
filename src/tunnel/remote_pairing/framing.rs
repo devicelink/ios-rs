@@ -24,8 +24,7 @@ pub fn recv(stream: &mut dyn Read) -> Result<plist::Value, Error> {
     let len = u32::from_be_bytes(len_buf) as usize;
     let mut body = vec![0u8; len];
     read_exact(stream, &mut body)?;
-    plist::from_bytes(&body)
-        .map_err(|e| Error::Protocol(format!("RemotePairing plist recv: {e}")))
+    plist::from_bytes(&body).map_err(|e| Error::Protocol(format!("RemotePairing plist recv: {e}")))
 }
 
 fn read_exact(s: &mut dyn Read, buf: &mut [u8]) -> Result<(), Error> {

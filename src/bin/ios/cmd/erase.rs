@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use ios_rs::tunnel::ConnectionMode;
 
 use crate::cmd::open_session;
@@ -20,11 +20,15 @@ pub fn run(udid: Option<&str>, mode: ConnectionMode, yes: bool, output: OutputMo
     let mut session = open_session(udid, mode)?;
     let ld = session.lockdown();
 
-    let mut stream = ld.connect_service("com.apple.mobile.obliteration")
+    let mut stream = ld
+        .connect_service("com.apple.mobile.obliteration")
         .context("connect obliteration service")?;
 
     let mut req = plist::Dictionary::new();
-    req.insert("Request".into(), plist::Value::String("ObliterateDevice".into()));
+    req.insert(
+        "Request".into(),
+        plist::Value::String("ObliterateDevice".into()),
+    );
 
     let mut body = Vec::new();
     plist::to_writer_xml(&mut body, &plist::Value::Dictionary(req))?;

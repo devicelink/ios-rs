@@ -11,31 +11,31 @@ use crate::cmd::output::{print_json, ActionResult, OutputMode};
 
 #[derive(serde::Serialize)]
 struct AfcEntry {
-    name:  String,
+    name: String,
     #[serde(rename = "type")]
-    kind:  String,
-    size:  Option<u64>,
+    kind: String,
+    size: Option<u64>,
     mtime: Option<u64>,
 }
 
 #[derive(serde::Serialize)]
 struct StatResult {
     #[serde(rename = "type")]
-    kind:  String,
-    size:  u64,
+    kind: String,
+    size: u64,
     mtime: u64,
 }
 
 #[derive(serde::Serialize)]
 struct AfcInfo {
-    model:       String,
+    model: String,
     total_bytes: u64,
-    free_bytes:  u64,
+    free_bytes: u64,
 }
 
 #[derive(serde::Serialize)]
 struct PullResult {
-    ok:   bool,
+    ok: bool,
     path: String,
 }
 
@@ -50,7 +50,7 @@ struct PullResult {
 fn connect(
     udid: Option<&str>,
     mode: ConnectionMode,
-    app:  Option<&str>,
+    app: Option<&str>,
 ) -> Result<(ios_rs::tunnel::DeviceSession, AfcClient)> {
     let mut session = open_session(udid, mode)?;
     let afc = match app {
@@ -74,11 +74,11 @@ fn connect(
 // ── entry points ──────────────────────────────────────────────────────────────
 
 pub fn ls(
-    udid:   Option<&str>,
-    mode:   ConnectionMode,
-    path:   &str,
-    long:   bool,
-    app:    Option<&str>,
+    udid: Option<&str>,
+    mode: ConnectionMode,
+    path: &str,
+    long: bool,
+    app: Option<&str>,
     output: OutputMode,
 ) -> Result<()> {
     let (_session, mut afc) = connect(udid, mode, app)?;
@@ -93,18 +93,28 @@ pub fn ls(
             let (kind, size, mtime) = match afc.get_file_info(&full) {
                 Ok(info) => {
                     let kind_str = match info.file_type {
-                        FileType::Regular   => "file",
+                        FileType::Regular => "file",
                         FileType::Directory => "directory",
-                        FileType::Symlink   => "symlink",
-                        FileType::Other     => "other",
-                    }.to_string();
-                    let sz = if info.file_type == FileType::Regular { Some(info.size) } else { None };
+                        FileType::Symlink => "symlink",
+                        FileType::Other => "other",
+                    }
+                    .to_string();
+                    let sz = if info.file_type == FileType::Regular {
+                        Some(info.size)
+                    } else {
+                        None
+                    };
                     let mt = Some(info.modified_nanos / 1_000_000_000);
                     (kind_str, sz, mt)
                 }
                 Err(_) => ("unknown".to_string(), None, None),
             };
-            json_entries.push(AfcEntry { name: name.clone(), kind, size, mtime });
+            json_entries.push(AfcEntry {
+                name: name.clone(),
+                kind,
+                size,
+                mtime,
+            });
         }
         return print_json(&json_entries);
     }
@@ -120,12 +130,17 @@ pub fn ls(
                     } else {
                         "         ".into()
                     };
-                    let extra = info.link_target
+                    let extra = info
+                        .link_target
                         .as_deref()
                         .map(|t| format!(" -> {t}"))
                         .unwrap_or_default();
-                    println!("{} {}  {}  {name}{extra}",
-                        info.file_type.indicator(), size_col, secs);
+                    println!(
+                        "{} {}  {}  {name}{extra}",
+                        info.file_type.indicator(),
+                        size_col,
+                        secs
+                    );
                 }
                 Err(_) => println!("?                    {name}"),
             }
@@ -137,26 +152,28 @@ pub fn ls(
 }
 
 pub fn stat(
-    udid:   Option<&str>,
-    mode:   ConnectionMode,
-    path:   &str,
-    app:    Option<&str>,
+    udid: Option<&str>,
+    mode: ConnectionMode,
+    path: &str,
+    app: Option<&str>,
     output: OutputMode,
 ) -> Result<()> {
     let (_session, mut afc) = connect(udid, mode, app)?;
 
-    let info = afc.get_file_info(path).with_context(|| format!("stat {path}"))?;
+    let info = afc
+        .get_file_info(path)
+        .with_context(|| format!("stat {path}"))?;
     let type_str = match info.file_type {
-        FileType::Regular   => "file",
+        FileType::Regular => "file",
         FileType::Directory => "directory",
-        FileType::Symlink   => "symlink",
-        FileType::Other     => "other",
+        FileType::Symlink => "symlink",
+        FileType::Other => "other",
     };
 
     if output.is_json() {
         return print_json(&StatResult {
-            kind:  type_str.to_string(),
-            size:  info.size,
+            kind: type_str.to_string(),
+            size: info.size,
             mtime: info.modified_nanos / 1_000_000_000,
         });
     }
@@ -170,16 +187,21 @@ pub fn stat(
     Ok(())
 }
 
-pub fn info(udid: Option<&str>, mode: ConnectionMode, app: Option<&str>, output: OutputMode) -> Result<()> {
+pub fn info(
+    udid: Option<&str>,
+    mode: ConnectionMode,
+    app: Option<&str>,
+    output: OutputMode,
+) -> Result<()> {
     let (_session, mut afc) = connect(udid, mode, app)?;
 
     let dev = afc.device_info().context("device_info")?;
 
     if output.is_json() {
         return print_json(&AfcInfo {
-            model:       dev.model.clone(),
+            model: dev.model.clone(),
             total_bytes: dev.total_bytes,
-            free_bytes:  dev.free_bytes,
+            free_bytes: dev.free_bytes,
         });
     }
 
@@ -191,11 +213,11 @@ pub fn info(udid: Option<&str>, mode: ConnectionMode, app: Option<&str>, output:
 }
 
 pub fn pull(
-    udid:   Option<&str>,
-    mode:   ConnectionMode,
+    udid: Option<&str>,
+    mode: ConnectionMode,
     remote: &str,
-    local:  &Path,
-    app:    Option<&str>,
+    local: &Path,
+    app: Option<&str>,
     output: OutputMode,
 ) -> Result<()> {
     let (_session, mut afc) = connect(udid, mode, app)?;
@@ -210,10 +232,14 @@ pub fn pull(
         if total > 0 && !output.is_json() {
             eprint!("\r  {}/{}", human_size(done), human_size(total));
         }
-    }).with_context(|| format!("pull {remote}"))?;
+    })
+    .with_context(|| format!("pull {remote}"))?;
 
     if output.is_json() {
-        return print_json(&PullResult { ok: true, path: dest.display().to_string() });
+        return print_json(&PullResult {
+            ok: true,
+            path: dest.display().to_string(),
+        });
     }
 
     eprintln!();
@@ -222,11 +248,11 @@ pub fn pull(
 }
 
 pub fn push(
-    udid:   Option<&str>,
-    mode:   ConnectionMode,
-    local:  &Path,
+    udid: Option<&str>,
+    mode: ConnectionMode,
+    local: &Path,
     remote: &str,
-    app:    Option<&str>,
+    app: Option<&str>,
     output: OutputMode,
 ) -> Result<()> {
     if !local.exists() {
@@ -235,7 +261,8 @@ pub fn push(
     let (_session, mut afc) = connect(udid, mode, app)?;
 
     let dest = if remote.ends_with('/') {
-        let name = local.file_name()
+        let name = local
+            .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
         format!("{}/{}", remote.trim_end_matches('/'), name)
@@ -255,14 +282,15 @@ pub fn push(
 }
 
 pub fn rm(
-    udid:   Option<&str>,
-    mode:   ConnectionMode,
-    path:   &str,
-    app:    Option<&str>,
+    udid: Option<&str>,
+    mode: ConnectionMode,
+    path: &str,
+    app: Option<&str>,
     output: OutputMode,
 ) -> Result<()> {
     let (_session, mut afc) = connect(udid, mode, app)?;
-    afc.remove_path(path).with_context(|| format!("rm {path}"))?;
+    afc.remove_path(path)
+        .with_context(|| format!("rm {path}"))?;
     if output.is_json() {
         print_json(&ActionResult::ok())?;
     }
@@ -270,10 +298,10 @@ pub fn rm(
 }
 
 pub fn mkdir(
-    udid:   Option<&str>,
-    mode:   ConnectionMode,
-    path:   &str,
-    app:    Option<&str>,
+    udid: Option<&str>,
+    mode: ConnectionMode,
+    path: &str,
+    app: Option<&str>,
     output: OutputMode,
 ) -> Result<()> {
     let (_session, mut afc) = connect(udid, mode, app)?;
@@ -285,15 +313,16 @@ pub fn mkdir(
 }
 
 pub fn mv(
-    udid:   Option<&str>,
-    mode:   ConnectionMode,
-    from:   &str,
-    to:     &str,
-    app:    Option<&str>,
+    udid: Option<&str>,
+    mode: ConnectionMode,
+    from: &str,
+    to: &str,
+    app: Option<&str>,
     output: OutputMode,
 ) -> Result<()> {
     let (_session, mut afc) = connect(udid, mode, app)?;
-    afc.rename(from, to).with_context(|| format!("mv {from} -> {to}"))?;
+    afc.rename(from, to)
+        .with_context(|| format!("mv {from} -> {to}"))?;
     if output.is_json() {
         print_json(&ActionResult::ok())?;
     }
@@ -303,7 +332,10 @@ pub fn mv(
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 fn leaf(path: &str) -> &str {
-    path.trim_end_matches('/').rsplit('/').next().unwrap_or(path)
+    path.trim_end_matches('/')
+        .rsplit('/')
+        .next()
+        .unwrap_or(path)
 }
 
 fn human_size(bytes: u64) -> String {
@@ -314,5 +346,9 @@ fn human_size(bytes: u64) -> String {
         v /= 1024.0;
         i += 1;
     }
-    if i == 0 { format!("{bytes} B") } else { format!("{v:.1} {}", UNITS[i]) }
+    if i == 0 {
+        format!("{bytes} B")
+    } else {
+        format!("{v:.1} {}", UNITS[i])
+    }
 }

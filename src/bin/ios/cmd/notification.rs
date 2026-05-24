@@ -18,9 +18,16 @@ struct NotificationEvent {
     name: String,
 }
 
-pub fn post(udid: Option<&str>, mode: ConnectionMode, name: &str, output: OutputMode) -> Result<()> {
+pub fn post(
+    udid: Option<&str>,
+    mode: ConnectionMode,
+    name: &str,
+    output: OutputMode,
+) -> Result<()> {
     let mut session = open_session(udid, mode)?;
-    let mut stream  = session.connect_rsd_shim(SHIM).context("connect notification proxy")?;
+    let mut stream = session
+        .connect_rsd_shim(SHIM)
+        .context("connect notification proxy")?;
     send_cmd(&mut stream, "PostNotification", Some(name))?;
 
     if output.is_json() {
@@ -31,13 +38,20 @@ pub fn post(udid: Option<&str>, mode: ConnectionMode, name: &str, output: Output
     Ok(())
 }
 
-pub fn observe(udid: Option<&str>, mode: ConnectionMode, name: Option<&str>, output: OutputMode) -> Result<()> {
+pub fn observe(
+    udid: Option<&str>,
+    mode: ConnectionMode,
+    name: Option<&str>,
+    output: OutputMode,
+) -> Result<()> {
     let mut session = open_session(udid, mode)?;
-    let mut stream  = session.connect_rsd_shim(SHIM).context("connect notification proxy")?;
+    let mut stream = session
+        .connect_rsd_shim(SHIM)
+        .context("connect notification proxy")?;
 
     match name {
         Some(n) => send_cmd(&mut stream, "ObserveNotification", Some(n))?,
-        None    => send_cmd(&mut stream, "ObserveAllNotifications", None)?,
+        None => send_cmd(&mut stream, "ObserveAllNotifications", None)?,
     }
 
     if !output.is_json() {
@@ -46,15 +60,20 @@ pub fn observe(udid: Option<&str>, mode: ConnectionMode, name: Option<&str>, out
 
     loop {
         let msg = match recv_plist(&mut stream) {
-            Ok(v)  => v,
+            Ok(v) => v,
             Err(_) => break,
         };
         if let Some(dict) = msg.as_dictionary() {
-            let cmd  = dict.get("Command").and_then(|v| v.as_string()).unwrap_or("");
+            let cmd = dict
+                .get("Command")
+                .and_then(|v| v.as_string())
+                .unwrap_or("");
             let note = dict.get("Name").and_then(|v| v.as_string()).unwrap_or("");
             if cmd == "RelayNotification" {
                 if output.is_json() {
-                    let event = NotificationEvent { name: note.to_owned() };
+                    let event = NotificationEvent {
+                        name: note.to_owned(),
+                    };
                     println!("{}", serde_json::to_string(&event)?);
                 } else {
                     println!("{note}");
@@ -99,8 +118,8 @@ fn read_exact(s: &mut MuxSocket, buf: &mut [u8]) -> Result<()> {
     let mut done = 0;
     while done < buf.len() {
         match s.read(&mut buf[done..]) {
-            Ok(0)  => anyhow::bail!("connection closed"),
-            Ok(n)  => done += n,
+            Ok(0) => anyhow::bail!("connection closed"),
+            Ok(n) => done += n,
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
             Err(e) => return Err(e.into()),
         }

@@ -36,7 +36,7 @@ test-all: test test-integration
 
 # Run clippy
 clippy:
-    cargo clippy -- -D warnings
+    RUSTFLAGS="-D warnings" cargo clippy --all-targets --all-features
 
 # Check formatting
 fmt-check:

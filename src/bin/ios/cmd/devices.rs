@@ -7,9 +7,9 @@ use crate::cmd::output::{print_json, OutputMode};
 
 #[derive(serde::Serialize)]
 struct DeviceEntry {
-    udid:        String,
-    name:        String,
-    connection:  String,
+    udid: String,
+    name: String,
+    connection: String,
     ios_version: String,
 }
 
@@ -27,15 +27,18 @@ pub fn run(output: OutputMode) -> Result<()> {
     }
 
     if output.is_json() {
-        let entries: Vec<DeviceEntry> = devices.iter().map(|d| {
-            let (name, version) = fetch_display_info(d.device_id);
-            DeviceEntry {
-                udid:        d.serial.clone(),
-                name,
-                connection:  d.connection_type.to_string(),
-                ios_version: version,
-            }
-        }).collect();
+        let entries: Vec<DeviceEntry> = devices
+            .iter()
+            .map(|d| {
+                let (name, version) = fetch_display_info(d.device_id);
+                DeviceEntry {
+                    udid: d.serial.clone(),
+                    name,
+                    connection: d.connection_type.to_string(),
+                    ios_version: version,
+                }
+            })
+            .collect();
         return print_json(&entries);
     }
 
@@ -60,18 +63,34 @@ pub fn run(output: OutputMode) -> Result<()> {
 
 fn fetch_display_info(device_id: u32) -> (String, String) {
     let name = || "—".to_string();
-    let ver  = || "—".to_string();
+    let ver = || "—".to_string();
 
-    let Ok(mut s) = LockdownSession::connect(device_id) else { return (name(), ver()); };
+    let Ok(mut s) = LockdownSession::connect(device_id) else {
+        return (name(), ver());
+    };
 
-    let n = s.get_value(None, "DeviceName")
+    let n = s
+        .get_value(None, "DeviceName")
         .ok()
-        .and_then(|v| if let plist::Value::String(s) = v { Some(s) } else { None })
+        .and_then(|v| {
+            if let plist::Value::String(s) = v {
+                Some(s)
+            } else {
+                None
+            }
+        })
         .unwrap_or_else(name);
 
-    let v = s.get_value(None, "ProductVersion")
+    let v = s
+        .get_value(None, "ProductVersion")
         .ok()
-        .and_then(|v| if let plist::Value::String(s) = v { Some(s) } else { None })
+        .and_then(|v| {
+            if let plist::Value::String(s) = v {
+                Some(s)
+            } else {
+                None
+            }
+        })
         .unwrap_or_else(ver);
 
     (n, v)

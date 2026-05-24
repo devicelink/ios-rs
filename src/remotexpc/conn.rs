@@ -10,7 +10,7 @@ use std::io::{BufReader, BufWriter, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::Mutex;
 
-use crate::xpc::{flags, decode_message, encode_message, Message, Value};
+use crate::xpc::{decode_message, encode_message, flags, Message, Value};
 
 use super::error::Error;
 use super::h2::{self, Frame};
@@ -19,9 +19,9 @@ const STREAM_CS: u32 = 1;
 const STREAM_SC: u32 = 3;
 
 pub struct RemoteXpcConn {
-    reader:      Mutex<BufReader<TcpStream>>,
-    writer:      Mutex<BufWriter<TcpStream>>,
-    recv_buf:    Mutex<Vec<u8>>,
+    reader: Mutex<BufReader<TcpStream>>,
+    writer: Mutex<BufWriter<TcpStream>>,
+    recv_buf: Mutex<Vec<u8>>,
     next_msg_id: Mutex<u64>,
 }
 
@@ -30,9 +30,9 @@ impl RemoteXpcConn {
     pub fn connect<A: ToSocketAddrs>(addr: A) -> Result<Self, Error> {
         let tcp = TcpStream::connect(addr)?;
         let conn = RemoteXpcConn {
-            reader:      Mutex::new(BufReader::new(tcp.try_clone()?)),
-            writer:      Mutex::new(BufWriter::new(tcp)),
-            recv_buf:    Mutex::new(Vec::new()),
+            reader: Mutex::new(BufReader::new(tcp.try_clone()?)),
+            writer: Mutex::new(BufWriter::new(tcp)),
+            recv_buf: Mutex::new(Vec::new()),
             next_msg_id: Mutex::new(1),
         };
         conn.handshake()?;
@@ -45,9 +45,9 @@ impl RemoteXpcConn {
     pub fn send(&self, value: Value) -> Result<u64, Error> {
         let msg_id = self.alloc_msg_id();
         let msg = Message {
-            flags:  flags::ALWAYS_SET | flags::DATA_PRESENT | flags::WANTING_REPLY,
+            flags: flags::ALWAYS_SET | flags::DATA_PRESENT | flags::WANTING_REPLY,
             msg_id,
-            body:   Some(value),
+            body: Some(value),
         };
         self.write_xpc_data(STREAM_CS, &msg)?;
         Ok(msg_id)
@@ -60,13 +60,13 @@ impl RemoteXpcConn {
     /// the RSD Handshake at ~17 KiB) across two HTTP/2 frames.
     pub fn receive(&self) -> Result<Message, Error> {
         let mut recv_buf = self.recv_buf.lock().unwrap();
-        let mut r        = self.reader.lock().unwrap();
+        let mut r = self.reader.lock().unwrap();
 
         loop {
             // If recv_buf already contains a complete XPC message, decode it.
             if recv_buf.len() >= 24 {
                 let body_len = u64::from_le_bytes(recv_buf[8..16].try_into().unwrap()) as usize;
-                let total    = 24 + body_len;
+                let total = 24 + body_len;
                 if recv_buf.len() >= total {
                     let (msg, _) = decode_message(&recv_buf[..total])?;
                     recv_buf.drain(..total);
@@ -138,10 +138,13 @@ impl RemoteXpcConn {
             w.write_all(h2::CLIENT_PREFACE)?;
 
             // 2. SETTINGS
-            h2::write_settings(&mut *w, &[
-                (h2::SETTING_MAX_CONCURRENT_STREAMS, 100),
-                (h2::SETTING_INITIAL_WINDOW_SIZE,    1_048_576),
-            ])?;
+            h2::write_settings(
+                &mut *w,
+                &[
+                    (h2::SETTING_MAX_CONCURRENT_STREAMS, 100),
+                    (h2::SETTING_INITIAL_WINDOW_SIZE, 1_048_576),
+                ],
+            )?;
 
             // 3. WINDOW_UPDATE on connection (stream 0)
             h2::write_window_update(&mut *w, 0, 983_041)?;

@@ -16,42 +16,42 @@
 use std::io::{Read, Write};
 use std::path::Path;
 
-use crate::usbmux::MuxSocket;
 use crate::lockdown::{Error, LockdownSession};
+use crate::usbmux::MuxSocket;
 
 const SERVICE: &str = "com.apple.afc";
-const MAGIC:       &[u8] = b"CFA6LPAA";
+const MAGIC: &[u8] = b"CFA6LPAA";
 const HEADER_SIZE: usize = 40;
-const READ_CHUNK:  usize = 4 * 1024 * 1024; // 4 MB per read request
-const WRITE_CHUNK: usize = 256 * 1024;       // 256 KB per write request
+const READ_CHUNK: usize = 4 * 1024 * 1024; // 4 MB per read request
+const WRITE_CHUNK: usize = 256 * 1024; // 256 KB per write request
 
 // ── opcodes ───────────────────────────────────────────────────────────────────
 
-const OP_STATUS:        u64 = 0x01;
-const OP_DATA:          u64 = 0x02;
-const OP_READ_DIR:      u64 = 0x03;
-const OP_REMOVE_PATH:   u64 = 0x08;
-const OP_MAKE_DIR:      u64 = 0x09;
+const OP_STATUS: u64 = 0x01;
+const OP_DATA: u64 = 0x02;
+const OP_READ_DIR: u64 = 0x03;
+const OP_REMOVE_PATH: u64 = 0x08;
+const OP_MAKE_DIR: u64 = 0x09;
 const OP_GET_FILE_INFO: u64 = 0x0a;
-const OP_GET_DEVINFO:   u64 = 0x0b;
-const OP_FILE_OPEN:     u64 = 0x0d;
+const OP_GET_DEVINFO: u64 = 0x0b;
+const OP_FILE_OPEN: u64 = 0x0d;
 const OP_FILE_OPEN_RES: u64 = 0x0e;
-const OP_FILE_READ:     u64 = 0x0f;
-const OP_FILE_WRITE:    u64 = 0x10;
-const OP_FILE_CLOSE:    u64 = 0x14;
-const OP_RENAME_PATH:   u64 = 0x22;
-const OP_MAKE_LINK:     u64 = 0x28;
+const OP_FILE_READ: u64 = 0x0f;
+const OP_FILE_WRITE: u64 = 0x10;
+const OP_FILE_CLOSE: u64 = 0x14;
+const OP_RENAME_PATH: u64 = 0x22;
+const OP_MAKE_LINK: u64 = 0x28;
 
 // ── file-open modes ───────────────────────────────────────────────────────────
 
 const FOPEN_RDONLY: u64 = 0x01;
-const FOPEN_WR:     u64 = 0x04; // create or truncate
+const FOPEN_WR: u64 = 0x04; // create or truncate
 
 // ── status codes ─────────────────────────────────────────────────────────────
 
-const STATUS_SUCCESS:        u64 = 0;
-const STATUS_OBJECT_EXISTS:  u64 = 16;
-const STATUS_END_OF_DATA:    u64 = 14;
+const STATUS_SUCCESS: u64 = 0;
+const STATUS_OBJECT_EXISTS: u64 = 16;
+const STATUS_END_OF_DATA: u64 = 14;
 
 // ── public types ──────────────────────────────────────────────────────────────
 
@@ -70,16 +70,16 @@ impl FileType {
             "S_IFREG" => FileType::Regular,
             "S_IFDIR" => FileType::Directory,
             "S_IFLNK" => FileType::Symlink,
-            _          => FileType::Other,
+            _ => FileType::Other,
         }
     }
 
     pub fn indicator(&self) -> char {
         match self {
-            FileType::Regular    => '-',
-            FileType::Directory  => 'd',
-            FileType::Symlink    => 'l',
-            FileType::Other      => '?',
+            FileType::Regular => '-',
+            FileType::Directory => 'd',
+            FileType::Symlink => 'l',
+            FileType::Other => '?',
         }
     }
 }
@@ -88,50 +88,68 @@ impl FileType {
 #[derive(Debug, Clone)]
 pub struct FileInfo {
     /// Entry name (leaf, not the full path).
-    pub name:          String,
-    pub file_type:     FileType,
+    pub name: String,
+    pub file_type: FileType,
     /// File size in bytes (0 for directories).
-    pub size:          u64,
+    pub size: u64,
     /// Modification time in nanoseconds since Unix epoch.
     pub modified_nanos: u64,
     /// Symlink target (only set when `file_type == Symlink`).
-    pub link_target:   Option<String>,
+    pub link_target: Option<String>,
 }
 
 impl FileInfo {
     pub fn parse(name: impl Into<String>, data: &[u8]) -> Self {
         let pairs = parse_kv_pairs(data);
-        let file_type = pairs.get("st_ifmt")
+        let file_type = pairs
+            .get("st_ifmt")
             .map(|s| FileType::from_str(s))
             .unwrap_or(FileType::Other);
-        let size = pairs.get("st_size")
+        let size = pairs
+            .get("st_size")
             .and_then(|s| s.parse().ok())
             .unwrap_or(0);
-        let modified_nanos = pairs.get("st_mtime")
+        let modified_nanos = pairs
+            .get("st_mtime")
             .and_then(|s| s.parse().ok())
             .unwrap_or(0);
         let link_target = pairs.get("LinkTarget").cloned();
-        FileInfo { name: name.into(), file_type, size, modified_nanos, link_target }
+        FileInfo {
+            name: name.into(),
+            file_type,
+            size,
+            modified_nanos,
+            link_target,
+        }
     }
 }
 
 /// Summary information about the device's file system.
 #[derive(Debug, Clone)]
 pub struct AfcDeviceInfo {
-    pub model:       String,
+    pub model: String,
     pub total_bytes: u64,
-    pub free_bytes:  u64,
-    pub block_size:  u64,
+    pub free_bytes: u64,
+    pub block_size: u64,
 }
 
 impl AfcDeviceInfo {
     pub fn parse(data: &[u8]) -> Self {
         let pairs = parse_kv_pairs(data);
         AfcDeviceInfo {
-            model:       pairs.get("Model").cloned().unwrap_or_default(),
-            total_bytes: pairs.get("FSTotalBytes").and_then(|s| s.parse().ok()).unwrap_or(0),
-            free_bytes:  pairs.get("FSFreeBytes").and_then(|s| s.parse().ok()).unwrap_or(0),
-            block_size:  pairs.get("FSBlockSize").and_then(|s| s.parse().ok()).unwrap_or(0),
+            model: pairs.get("Model").cloned().unwrap_or_default(),
+            total_bytes: pairs
+                .get("FSTotalBytes")
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0),
+            free_bytes: pairs
+                .get("FSFreeBytes")
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0),
+            block_size: pairs
+                .get("FSBlockSize")
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0),
         }
     }
 }
@@ -144,7 +162,7 @@ impl AfcDeviceInfo {
 /// [`AfcClient::from_stream`] (any pre-connected `MuxSocket`, e.g. from the
 /// house-arrest service or an RSD shim).
 pub struct AfcClient {
-    stream:     MuxSocket,
+    stream: MuxSocket,
     packet_num: u64,
 }
 
@@ -153,7 +171,10 @@ impl AfcClient {
     ///
     /// Gives access to the media partition (`/` = `DCIM`, `Books`, etc.).
     pub fn connect(session: &mut LockdownSession) -> Result<Self, Error> {
-        Ok(AfcClient { stream: session.connect_service(SERVICE)?, packet_num: 0 })
+        Ok(AfcClient {
+            stream: session.connect_service(SERVICE)?,
+            packet_num: 0,
+        })
     }
 
     /// Build an `AfcClient` from any already-connected `MuxSocket`.
@@ -161,7 +182,10 @@ impl AfcClient {
     /// Use this when you obtained the socket through the house-arrest service
     /// (per-app container), an RSD shim, or any other transport.
     pub fn from_stream(stream: MuxSocket) -> Self {
-        AfcClient { stream, packet_num: 0 }
+        AfcClient {
+            stream,
+            packet_num: 0,
+        }
     }
 
     /// Connect to an app's full sandbox container via `com.apple.mobile.house_arrest`.
@@ -176,7 +200,7 @@ impl AfcClient {
 
     /// Connect to an app's `Documents/` directory — legacy lockdownd path.
     pub fn connect_app_documents(
-        session:   &mut LockdownSession,
+        session: &mut LockdownSession,
         bundle_id: &str,
     ) -> Result<Self, Error> {
         let stream = session.connect_service("com.apple.mobile.house_arrest")?;
@@ -200,17 +224,20 @@ impl AfcClient {
 
     fn house_arrest_on_stream(
         mut stream: MuxSocket,
-        command:    &str,
-        bundle_id:  &str,
+        command: &str,
+        bundle_id: &str,
     ) -> Result<Self, Error> {
         // Send the VendContainer / VendDocuments plist
         let mut body = Vec::new();
-        plist::to_writer_xml(&mut body, &plist::Value::Dictionary({
-            let mut d = plist::Dictionary::new();
-            d.insert("Command".into(),    plist::Value::String(command.into()));
-            d.insert("Identifier".into(), plist::Value::String(bundle_id.into()));
-            d
-        }))?;
+        plist::to_writer_xml(
+            &mut body,
+            &plist::Value::Dictionary({
+                let mut d = plist::Dictionary::new();
+                d.insert("Command".into(), plist::Value::String(command.into()));
+                d.insert("Identifier".into(), plist::Value::String(bundle_id.into()));
+                d
+            }),
+        )?;
         let len = body.len() as u32;
         stream.write_all(&len.to_be_bytes())?;
         stream.write_all(&body)?;
@@ -232,18 +259,23 @@ impl AfcClient {
         read_exact_eof_ok(&mut stream, &mut resp_body)?;
 
         let resp: plist::Value = plist::from_bytes(&resp_body)?;
-        if let Some(err) = resp.as_dictionary()
+        if let Some(err) = resp
+            .as_dictionary()
             .and_then(|d| d.get("Error"))
             .and_then(|v| v.as_string())
         {
-            let desc = resp.as_dictionary()
+            let desc = resp
+                .as_dictionary()
                 .and_then(|d| d.get("ErrorDescription"))
                 .and_then(|v| v.as_string())
                 .unwrap_or(err);
             return Err(Error::Afc(format!("house_arrest({bundle_id}): {desc}")));
         }
 
-        Ok(AfcClient { stream, packet_num: 0 })
+        Ok(AfcClient {
+            stream,
+            packet_num: 0,
+        })
     }
 
     // ── directory operations ─────────────────────────────────────────────────
@@ -255,11 +287,15 @@ impl AfcClient {
         self.send_request(OP_READ_DIR, &nul_str(path), &[])?;
         let (op, data) = self.recv_response()?;
         match op {
-            OP_DATA   => Ok(parse_nul_strings(&data).into_iter()
-                            .filter(|n| n != "." && n != "..").collect()),
+            OP_DATA => Ok(parse_nul_strings(&data)
+                .into_iter()
+                .filter(|n| n != "." && n != "..")
+                .collect()),
             OP_STATUS => Err(Error::Afc(format!(
-                "list_dir {path}: {}", status_name(le_u64(&data, 0))))),
-            _         => Err(Error::Afc(format!("list_dir: unexpected op {op:#x}"))),
+                "list_dir {path}: {}",
+                status_name(le_u64(&data, 0))
+            ))),
+            _ => Err(Error::Afc(format!("list_dir: unexpected op {op:#x}"))),
         }
     }
 
@@ -268,10 +304,12 @@ impl AfcClient {
         self.send_request(OP_GET_FILE_INFO, &nul_str(path), &[])?;
         let (op, data) = self.recv_response()?;
         match op {
-            OP_DATA   => Ok(FileInfo::parse(leaf(path), &data)),
+            OP_DATA => Ok(FileInfo::parse(leaf(path), &data)),
             OP_STATUS => Err(Error::Afc(format!(
-                "stat {path}: {}", status_name(le_u64(&data, 0))))),
-            _         => Err(Error::Afc(format!("stat: unexpected op {op:#x}"))),
+                "stat {path}: {}",
+                status_name(le_u64(&data, 0))
+            ))),
+            _ => Err(Error::Afc(format!("stat: unexpected op {op:#x}"))),
         }
     }
 
@@ -280,10 +318,12 @@ impl AfcClient {
         self.send_request(OP_GET_DEVINFO, &[], &[])?;
         let (op, data) = self.recv_response()?;
         match op {
-            OP_DATA   => Ok(AfcDeviceInfo::parse(&data)),
+            OP_DATA => Ok(AfcDeviceInfo::parse(&data)),
             OP_STATUS => Err(Error::Afc(format!(
-                "device_info: {}", status_name(le_u64(&data, 0))))),
-            _         => Err(Error::Afc(format!("device_info: unexpected op {op:#x}"))),
+                "device_info: {}",
+                status_name(le_u64(&data, 0))
+            ))),
+            _ => Err(Error::Afc(format!("device_info: unexpected op {op:#x}"))),
         }
     }
 
@@ -294,8 +334,11 @@ impl AfcClient {
         match op {
             OP_STATUS => {
                 let code = le_u64(&data, 0);
-                if code == STATUS_SUCCESS || code == STATUS_OBJECT_EXISTS { Ok(()) }
-                else { Err(Error::Afc(format!("mkdir {path}: {}", status_name(code)))) }
+                if code == STATUS_SUCCESS || code == STATUS_OBJECT_EXISTS {
+                    Ok(())
+                } else {
+                    Err(Error::Afc(format!("mkdir {path}: {}", status_name(code))))
+                }
             }
             _ => Err(Error::Afc(format!("mkdir: unexpected op {op:#x}"))),
         }
@@ -358,11 +401,14 @@ impl AfcClient {
         self.send_request(OP_FILE_READ, &args, &[])?;
         let (op, data) = self.recv_response()?;
         match op {
-            OP_DATA   => Ok(data),
+            OP_DATA => Ok(data),
             OP_STATUS => {
                 let code = le_u64(&data, 0);
-                if code == STATUS_SUCCESS || code == STATUS_END_OF_DATA { Ok(vec![]) }
-                else { Err(Error::Afc(format!("file_read: {}", status_name(code)))) }
+                if code == STATUS_SUCCESS || code == STATUS_END_OF_DATA {
+                    Ok(vec![])
+                } else {
+                    Err(Error::Afc(format!("file_read: {}", status_name(code))))
+                }
             }
             _ => Err(Error::Afc(format!("file_read: unexpected op {op:#x}"))),
         }
@@ -391,9 +437,14 @@ impl AfcClient {
         loop {
             let chunk = match self.file_read(handle, READ_CHUNK) {
                 Ok(c) => c,
-                Err(e) => { let _ = self.file_close(handle); return Err(e); }
+                Err(e) => {
+                    let _ = self.file_close(handle);
+                    return Err(e);
+                }
             };
-            if chunk.is_empty() { break; }
+            if chunk.is_empty() {
+                break;
+            }
             buf.extend_from_slice(&chunk);
         }
         self.file_close(handle)?;
@@ -407,7 +458,7 @@ impl AfcClient {
     pub fn pull_file(
         &mut self,
         remote_path: &str,
-        local_path:  &Path,
+        local_path: &Path,
         mut progress: impl FnMut(u64, u64),
     ) -> Result<(), Error> {
         self.pull_file_dyn(remote_path, local_path, &mut progress)
@@ -416,8 +467,8 @@ impl AfcClient {
     fn pull_file_dyn(
         &mut self,
         remote_path: &str,
-        local_path:  &Path,
-        progress:    &mut dyn FnMut(u64, u64),
+        local_path: &Path,
+        progress: &mut dyn FnMut(u64, u64),
     ) -> Result<(), Error> {
         let info = self.get_file_info(remote_path)?;
 
@@ -426,7 +477,7 @@ impl AfcClient {
                 .map_err(|e| Error::Afc(format!("create_dir {}: {e}", local_path.display())))?;
             for entry in self.list_dir(remote_path)? {
                 let remote = format!("{}/{}", remote_path.trim_end_matches('/'), entry);
-                let local  = local_path.join(&entry);
+                let local = local_path.join(&entry);
                 self.pull_file_dyn(&remote, &local, progress)?;
             }
             return Ok(());
@@ -440,9 +491,14 @@ impl AfcClient {
         loop {
             let chunk = match self.file_read(handle, READ_CHUNK) {
                 Ok(c) => c,
-                Err(e) => { let _ = self.file_close(handle); return Err(e); }
+                Err(e) => {
+                    let _ = self.file_close(handle);
+                    return Err(e);
+                }
             };
-            if chunk.is_empty() { break; }
+            if chunk.is_empty() {
+                break;
+            }
             out.write_all(&chunk)
                 .map_err(|e| Error::Afc(format!("write local: {e}")))?;
             done += chunk.len() as u64;
@@ -458,13 +514,16 @@ impl AfcClient {
 
         if meta.is_dir() {
             self.mkdir(remote_path)?;
-            for entry in std::fs::read_dir(local_path)
-                .map_err(|e| Error::Afc(format!("read_dir: {e}")))?
+            for entry in
+                std::fs::read_dir(local_path).map_err(|e| Error::Afc(format!("read_dir: {e}")))?
             {
                 let entry = entry.map_err(|e| Error::Afc(format!("dir entry: {e}")))?;
-                let name  = entry.file_name();
-                let remote = format!("{}/{}", remote_path.trim_end_matches('/'),
-                                     name.to_string_lossy());
+                let name = entry.file_name();
+                let remote = format!(
+                    "{}/{}",
+                    remote_path.trim_end_matches('/'),
+                    name.to_string_lossy()
+                );
                 self.push_file(&entry.path(), &remote)?;
             }
             return Ok(());
@@ -480,7 +539,9 @@ impl AfcClient {
     pub fn put_file(&mut self, remote_path: &str, data: &[u8]) -> Result<(), Error> {
         if let Some(slash) = remote_path.rfind('/') {
             let dir = &remote_path[..slash];
-            if !dir.is_empty() { self.mkdir(dir)?; }
+            if !dir.is_empty() {
+                self.mkdir(dir)?;
+            }
         }
         let handle = self.file_open(remote_path)?;
         for chunk in data.chunks(WRITE_CHUNK) {
@@ -502,7 +563,9 @@ impl AfcClient {
         match op {
             OP_FILE_OPEN_RES => Ok(le_u64(&data, 0)),
             OP_STATUS => Err(Error::Afc(format!(
-                "file_open {path}: {}", status_name(le_u64(&data, 0))))),
+                "file_open {path}: {}",
+                status_name(le_u64(&data, 0))
+            ))),
             _ => Err(Error::Afc(format!("file_open: unexpected op {op:#x}"))),
         }
     }
@@ -513,8 +576,12 @@ impl AfcClient {
         let handle = self.file_open(remote_path)?;
         let mut buf = vec![0u8; WRITE_CHUNK];
         loop {
-            let n = f.read(&mut buf).map_err(|e| Error::Afc(format!("read local: {e}")))?;
-            if n == 0 { break; }
+            let n = f
+                .read(&mut buf)
+                .map_err(|e| Error::Afc(format!("read local: {e}")))?;
+            if n == 0 {
+                break;
+            }
             if let Err(e) = self.file_write(handle, &buf[..n]) {
                 let _ = self.file_close(handle);
                 return Err(e);
@@ -528,17 +595,20 @@ impl AfcClient {
         match op {
             OP_STATUS => {
                 let code = le_u64(&data, 0);
-                if code == STATUS_SUCCESS { Ok(()) }
-                else { Err(Error::Afc(format!("{context}: {}", status_name(code)))) }
+                if code == STATUS_SUCCESS {
+                    Ok(())
+                } else {
+                    Err(Error::Afc(format!("{context}: {}", status_name(code))))
+                }
             }
             _ => Err(Error::Afc(format!("{context}: unexpected op {op:#x}"))),
         }
     }
 
     fn send_request(&mut self, op: u64, args: &[u8], file_data: &[u8]) -> Result<(), Error> {
-        let this_length   = (HEADER_SIZE + args.len()) as u64;
+        let this_length = (HEADER_SIZE + args.len()) as u64;
         let entire_length = this_length + file_data.len() as u64;
-        self.packet_num  += 1;
+        self.packet_num += 1;
 
         let mut hdr = [0u8; HEADER_SIZE];
         hdr[0..8].copy_from_slice(MAGIC);
@@ -548,8 +618,12 @@ impl AfcClient {
         hdr[32..40].copy_from_slice(&op.to_le_bytes());
 
         self.stream.write_all(&hdr)?;
-        if !args.is_empty()      { self.stream.write_all(args)?; }
-        if !file_data.is_empty() { self.stream.write_all(file_data)?; }
+        if !args.is_empty() {
+            self.stream.write_all(args)?;
+        }
+        if !file_data.is_empty() {
+            self.stream.write_all(file_data)?;
+        }
         self.stream.flush()?;
         Ok(())
     }
@@ -561,14 +635,16 @@ impl AfcClient {
         if &hdr[0..8] != MAGIC {
             return Err(Error::Afc("bad AFC magic in response".into()));
         }
-        let entire_length = le_u64(&hdr,  8) as usize;
-        let this_length   = le_u64(&hdr, 16) as usize;
-        let op            = le_u64(&hdr, 32);
+        let entire_length = le_u64(&hdr, 8) as usize;
+        let this_length = le_u64(&hdr, 16) as usize;
+        let op = le_u64(&hdr, 32);
 
         let args_len = this_length.saturating_sub(HEADER_SIZE);
         let data_len = entire_length.saturating_sub(this_length);
         let mut payload = vec![0u8; args_len + data_len];
-        if !payload.is_empty() { read_exact(&mut self.stream, &mut payload)?; }
+        if !payload.is_empty() {
+            read_exact(&mut self.stream, &mut payload)?;
+        }
         Ok((op, payload))
     }
 }
@@ -586,7 +662,9 @@ pub fn nul_str(s: &str) -> Vec<u8> {
 ///
 /// Returns 0 if `buf` is shorter than `offset + 8`.
 pub fn le_u64(buf: &[u8], offset: usize) -> u64 {
-    if buf.len() < offset + 8 { return 0; }
+    if buf.len() < offset + 8 {
+        return 0;
+    }
     u64::from_le_bytes(buf[offset..offset + 8].try_into().unwrap())
 }
 
@@ -601,7 +679,8 @@ pub fn parse_nul_strings(data: &[u8]) -> Vec<String> {
 /// Parse NUL-separated `key\0value\0key\0value\0…` pairs into a map.
 pub fn parse_kv_pairs(data: &[u8]) -> std::collections::HashMap<String, String> {
     let strings = parse_nul_strings(data);
-    strings.chunks(2)
+    strings
+        .chunks(2)
         .filter(|c| c.len() == 2)
         .map(|c| (c[0].clone(), c[1].clone()))
         .collect()
@@ -615,16 +694,16 @@ fn leaf(path: &str) -> &str {
 /// Human-readable name for an AFC status code.
 pub fn status_name(code: u64) -> String {
     let name = match code {
-        0  => "success",
-        1  => "unknown error",
-        2  => "invalid header",
-        3  => "no resources",
-        4  => "read error",
-        5  => "write error",
-        6  => "unknown packet type",
-        7  => "invalid arg",
-        8  => "not found",
-        9  => "is a directory",
+        0 => "success",
+        1 => "unknown error",
+        2 => "invalid header",
+        3 => "no resources",
+        4 => "read error",
+        5 => "write error",
+        6 => "unknown packet type",
+        7 => "invalid arg",
+        8 => "not found",
+        9 => "is a directory",
         10 => "permission denied",
         11 => "not connected",
         12 => "timeout",
@@ -635,7 +714,7 @@ pub fn status_name(code: u64) -> String {
         17 => "object busy",
         18 => "no space left",
         20 => "I/O error",
-        _  => "unknown",
+        _ => "unknown",
     };
     format!("{name} (code {code})")
 }
@@ -644,7 +723,9 @@ fn read_exact(s: &mut MuxSocket, buf: &mut [u8]) -> Result<(), Error> {
     let mut filled = 0;
     while filled < buf.len() {
         let n = s.read(&mut buf[filled..])?;
-        if n == 0 { return Err(Error::Closed); }
+        if n == 0 {
+            return Err(Error::Closed);
+        }
         filled += n;
     }
     Ok(())

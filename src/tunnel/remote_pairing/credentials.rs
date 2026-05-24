@@ -13,7 +13,7 @@ use crate::tunnel::error::Error;
 #[derive(Serialize, Deserialize, Clone)]
 pub struct OurIdentity {
     /// UUID string identifying this host in the pairing protocol
-    pub identifier:  String,
+    pub identifier: String,
     /// Ed25519 signing key (32-byte seed, hex-encoded)
     pub signing_key: String,
 }
@@ -29,7 +29,7 @@ pub struct PeerCredentials {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct RemotePairingRecord {
-    pub our:  OurIdentity,
+    pub our: OurIdentity,
     pub peer: PeerCredentials,
 }
 
@@ -64,18 +64,19 @@ impl RemotePairingRecord {
     pub fn signing_key(&self) -> Result<SigningKey, Error> {
         let bytes = hex_decode(&self.our.signing_key)
             .map_err(|e| Error::Protocol(format!("bad signing key hex: {e}")))?;
-        let arr: [u8; 32] = bytes.try_into()
+        let arr: [u8; 32] = bytes
+            .try_into()
             .map_err(|_| Error::Protocol("signing key must be 32 bytes".into()))?;
         Ok(SigningKey::from_bytes(&arr))
     }
 
     /// Build a fresh identity (no prior pairing for this device).
     pub fn new_identity(_udid: &str) -> Self {
-        let sk    = SigningKey::generate(&mut OsRng);
+        let sk = SigningKey::generate(&mut OsRng);
         let ident = uuid::Uuid::new_v4().to_string().to_uppercase();
         RemotePairingRecord {
             our: OurIdentity {
-                identifier:  ident,
+                identifier: ident,
                 signing_key: hex_encode(sk.as_bytes()),
             },
             peer: PeerCredentials {
@@ -88,9 +89,11 @@ impl RemotePairingRecord {
 
 fn record_path(udid: &str) -> Option<PathBuf> {
     let home = std::env::var("HOME").ok()?;
-    Some(PathBuf::from(home)
-        .join(".local/share/devicelink/remote-pairing")
-        .join(format!("{udid}.json")))
+    Some(
+        PathBuf::from(home)
+            .join(".local/share/devicelink/remote-pairing")
+            .join(format!("{udid}.json")),
+    )
 }
 
 pub fn hex_encode(b: &[u8]) -> String {
@@ -130,4 +133,3 @@ mod uuid {
         }
     }
 }
-

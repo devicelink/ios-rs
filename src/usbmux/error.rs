@@ -1,5 +1,5 @@
-use thiserror::Error;
 use super::types::{ProtoError, ResultCode};
+use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum Error {

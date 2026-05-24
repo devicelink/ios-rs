@@ -52,7 +52,6 @@ use ios_rs::tunnel::ConnectionMode;
 use crate::cmd::open_session;
 use crate::cmd::output::{print_json, ActionResult, OutputMode};
 
-
 #[derive(serde::Serialize)]
 struct OrientationInfo {
     orientation: String,
@@ -62,11 +61,12 @@ pub fn get(udid: Option<&str>, mode: ConnectionMode, output: OutputMode) -> Resu
     let mut session = open_session(udid, mode)?;
     let mut sbs = SpringBoardClient::connect(session.lockdown())
         .map_err(|e| anyhow::anyhow!("springboardservices: {e}"))?;
-    let orientation = sbs.get_orientation()
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let orientation = sbs.get_orientation().map_err(|e| anyhow::anyhow!("{e}"))?;
 
     if output.is_json() {
-        return print_json(&OrientationInfo { orientation: orientation.to_string() });
+        return print_json(&OrientationInfo {
+            orientation: orientation.to_string(),
+        });
     }
 
     println!("{orientation}  ({})", orientation as u8);
@@ -74,18 +74,19 @@ pub fn get(udid: Option<&str>, mode: ConnectionMode, output: OutputMode) -> Resu
 }
 
 pub fn set(
-    udid:              Option<&str>,
-    direction:         &str,
-    bundle_id:         Option<&str>,
-    runner_bundle_id:  &str,
-    xctest_config:     &str,
-    output:            OutputMode,
+    udid: Option<&str>,
+    direction: &str,
+    bundle_id: Option<&str>,
+    runner_bundle_id: &str,
+    xctest_config: &str,
+    output: OutputMode,
 ) -> Result<()> {
-    let target = Orientation::parse(direction)
-        .ok_or_else(|| anyhow::anyhow!(
+    let target = Orientation::parse(direction).ok_or_else(|| {
+        anyhow::anyhow!(
             "unknown orientation '{direction}'. \
              Valid values: portrait, portrait_upside_down, landscape_left, landscape_right"
-        ))?;
+        )
+    })?;
 
     // Try direct SpringBoard API first — instant, no XCUITest, no host app launch.
     {
@@ -93,9 +94,9 @@ pub fn set(
         if let Ok(mut sbs) = SpringBoardClient::connect(session.lockdown()) {
             if sbs.set_orientation(target).is_ok() {
                 if output.is_json() {
-                    return print_json(&ActionResult::with_msg(
-                        format!("Orientation set to '{direction}'.")
-                    ));
+                    return print_json(&ActionResult::with_msg(format!(
+                        "Orientation set to '{direction}'."
+                    )));
                 }
                 println!("Orientation set to '{direction}'.");
                 return Ok(());
@@ -108,7 +109,8 @@ pub fn set(
         bail!("orientation set requires iOS 17.4+ RSD path (CDTunnel)");
     }
 
-    let rsd = session.connect_rsd()
+    let rsd = session
+        .connect_rsd()
         .map_err(|e| anyhow::anyhow!("RSD: {e}"))?;
 
     // Build the app bundles map for the test runner path lookup
@@ -118,18 +120,28 @@ pub fn set(
         use ios_rs::xpc::Value;
         use std::collections::HashMap;
 
-        let stream = session.connect_rsd_shim(
-                "com.apple.mobile.installation_proxy.shim.remote")
+        let stream = session
+            .connect_rsd_shim("com.apple.mobile.installation_proxy.shim.remote")
             .map_err(|e| anyhow::anyhow!("installation_proxy shim: {e}"))?;
         let mut proxy = InstallationProxy::from_stream(stream);
-        let apps = proxy.list_apps(AppType::Any)
+        let apps = proxy
+            .list_apps(AppType::Any)
             .map_err(|e| anyhow::anyhow!("list apps: {e}"))?;
 
-        apps.into_iter().map(|app| {
-            let mut props = HashMap::new();
-            props.insert("Path".to_string(), Value::String(app.path));
-            (app.bundle_id, ServiceEntry { port: 0, uses_remote_xpc: false, properties: props })
-        }).collect::<HashMap<_, _>>()
+        apps.into_iter()
+            .map(|app| {
+                let mut props = HashMap::new();
+                props.insert("Path".to_string(), Value::String(app.path));
+                (
+                    app.bundle_id,
+                    ServiceEntry {
+                        port: 0,
+                        uses_remote_xpc: false,
+                        properties: props,
+                    },
+                )
+            })
+            .collect::<HashMap<_, _>>()
     };
 
     // Auto-detect the current foreground app before taking the tunnel reference.
@@ -145,7 +157,8 @@ pub fn set(
         None
     };
 
-    let tunnel = session.smoltcp_tunnel_ref()
+    let tunnel = session
+        .smoltcp_tunnel_ref()
         .ok_or_else(|| anyhow::anyhow!("no tunnel"))?;
 
     let mut env = std::collections::HashMap::new();
@@ -155,7 +168,8 @@ pub fn set(
         eprintln!("[ios-rs] Using foreground app: {target_bid}");
     }
     let target_path = if !target_bid.is_empty() {
-        app_bundles.get(target_bid)
+        app_bundles
+            .get(target_bid)
             .and_then(|e| e.properties.get("Path"))
             .and_then(|v| v.as_str())
             .unwrap_or("")
@@ -165,15 +179,15 @@ pub fn set(
     };
 
     let config = ios_rs::xctest::RunConfig {
-        bundle_id:              target_bid,
-        bundle_path:            &target_path,
-        test_runner_bundle_id:  runner_bundle_id,
-        xctest_config_name:     xctest_config,
-        tests_to_run:           &[],
-        tests_to_skip:          &[],
-        is_xctest:              false,
-        initialize_for_ui:      true,
-        extra_env:              env,
+        bundle_id: target_bid,
+        bundle_path: &target_path,
+        test_runner_bundle_id: runner_bundle_id,
+        xctest_config_name: xctest_config,
+        tests_to_run: &[],
+        tests_to_skip: &[],
+        is_xctest: false,
+        initialize_for_ui: true,
+        extra_env: env,
     };
 
     eprintln!("[ios-rs] Setting orientation to '{direction}' via XCUITest…");
@@ -181,7 +195,9 @@ pub fn set(
         .map_err(|e| anyhow::anyhow!("test run: {e}"))?;
 
     if output.is_json() {
-        print_json(&ActionResult::with_msg(format!("Orientation set to '{direction}'.")))
+        print_json(&ActionResult::with_msg(format!(
+            "Orientation set to '{direction}'."
+        )))
     } else {
         println!("Orientation set to '{direction}'.");
         Ok(())

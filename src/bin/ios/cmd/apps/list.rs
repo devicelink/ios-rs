@@ -11,32 +11,47 @@ const RSD_SERVICE: &str = "com.apple.mobile.installation_proxy.shim.remote";
 #[derive(serde::Serialize)]
 struct AppEntry {
     bundle_id: String,
-    name:      String,
-    version:   String,
+    name: String,
+    version: String,
 }
 
-pub fn run(udid: Option<&str>, system: bool, all: bool, mode: ConnectionMode, output: OutputMode) -> Result<()> {
+pub fn run(
+    udid: Option<&str>,
+    system: bool,
+    all: bool,
+    mode: ConnectionMode,
+    output: OutputMode,
+) -> Result<()> {
     let mut session = open_session(udid, mode)?;
 
     let mut proxy = if session.is_rsd() {
-        let stream = session.connect_rsd_shim(RSD_SERVICE)
+        let stream = session
+            .connect_rsd_shim(RSD_SERVICE)
             .map_err(|e| anyhow::anyhow!("{e}"))?;
         InstallationProxy::from_stream(stream)
     } else {
-        InstallationProxy::connect(session.lockdown())
-            .map_err(|e| anyhow::anyhow!("{e}"))?
+        InstallationProxy::connect(session.lockdown()).map_err(|e| anyhow::anyhow!("{e}"))?
     };
 
-    let app_type = if all { AppType::Any } else if system { AppType::System } else { AppType::User };
+    let app_type = if all {
+        AppType::Any
+    } else if system {
+        AppType::System
+    } else {
+        AppType::User
+    };
     let mut apps = proxy.list_apps(app_type)?;
     apps.sort_by(|a, b| a.name.cmp(&b.name));
 
     if output.is_json() {
-        let entries: Vec<AppEntry> = apps.iter().map(|app| AppEntry {
-            bundle_id: app.bundle_id.clone(),
-            name:      app.name.clone(),
-            version:   app.short_version.clone(),
-        }).collect();
+        let entries: Vec<AppEntry> = apps
+            .iter()
+            .map(|app| AppEntry {
+                bundle_id: app.bundle_id.clone(),
+                name: app.name.clone(),
+                version: app.short_version.clone(),
+            })
+            .collect();
         return print_json(&entries);
     }
 

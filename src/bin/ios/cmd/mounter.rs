@@ -1,3 +1,6 @@
+use anyhow::{bail, Context, Result};
+use plist::Value;
+use sha2::{Digest, Sha384};
 /// Developer Disk Image (DDI) mounting for iOS 17+.
 ///
 /// Downloads the personalized DDI from github.com/doronz88/DeveloperDiskImage,
@@ -17,13 +20,10 @@
 ///   8. MountImage with IM4M + trustcache
 use std::io::{Read, Write};
 use std::path::PathBuf;
-use anyhow::{bail, Context, Result};
-use plist::Value;
-use sha2::{Digest, Sha384};
 
-use ios_rs::tunnel::ConnectionMode;
 use crate::cmd::open_session;
 use crate::cmd::output::{print_json, ActionResult, OutputMode};
+use ios_rs::tunnel::ConnectionMode;
 
 #[derive(serde::Serialize)]
 struct MounterStatus {
@@ -33,9 +33,9 @@ struct MounterStatus {
 // ── DDI repo constants ────────────────────────────────────────────────────────
 
 const DDI_REPO: &str = "doronz88/DeveloperDiskImage";
-const DDI_IMAGE:       &str = "PersonalizedImages/Xcode_iOS_DDI_Personalized/Image.dmg";
-const DDI_MANIFEST:    &str = "PersonalizedImages/Xcode_iOS_DDI_Personalized/BuildManifest.plist";
-const DDI_TRUSTCACHE:  &str = "PersonalizedImages/Xcode_iOS_DDI_Personalized/Image.dmg.trustcache";
+const DDI_IMAGE: &str = "PersonalizedImages/Xcode_iOS_DDI_Personalized/Image.dmg";
+const DDI_MANIFEST: &str = "PersonalizedImages/Xcode_iOS_DDI_Personalized/BuildManifest.plist";
+const DDI_TRUSTCACHE: &str = "PersonalizedImages/Xcode_iOS_DDI_Personalized/Image.dmg.trustcache";
 
 // ── public entry points ───────────────────────────────────────────────────────
 
@@ -44,8 +44,8 @@ pub fn mount(udid: Option<&str>, output: OutputMode) -> Result<()> {
 
     // ── 1. Fetch DDI files (cached) ──────────────────────────────────────────
     eprintln!("[mounter] fetching DDI files from github.com/{DDI_REPO}…");
-    let (image_bytes, manifest_bytes, trustcache_bytes) = fetch_ddi_files()
-        .context("download DDI files")?;
+    let (image_bytes, manifest_bytes, trustcache_bytes) =
+        fetch_ddi_files().context("download DDI files")?;
     eprintln!("[mounter] Image.dmg: {} MB", image_bytes.len() / 1_048_576);
 
     // SHA-384 of Image.dmg used for QueryPersonalizationManifest
@@ -56,8 +56,8 @@ pub fn mount(udid: Option<&str>, output: OutputMode) -> Result<()> {
     };
 
     // ── 2. Connect to mounter shim service ───────────────────────────────────
-    let socket = session.connect_rsd_shim(
-            "com.apple.mobile.mobile_image_mounter.shim.remote")
+    let socket = session
+        .connect_rsd_shim("com.apple.mobile.mobile_image_mounter.shim.remote")
         .context("connect mounter shim")?;
 
     // ── 3. LookupImage ───────────────────────────────────────────────────────
@@ -88,14 +88,16 @@ pub fn mount(udid: Option<&str>, output: OutputMode) -> Result<()> {
         match recv_plist(&mut sock) {
             Ok(resp) => {
                 // Cache hit — device returned the IM4M
-                if let Some(Value::Data(b)) = resp.as_dictionary().and_then(|d| d.get("ImageSignature")) {
+                if let Some(Value::Data(b)) =
+                    resp.as_dictionary().and_then(|d| d.get("ImageSignature"))
+                {
                     b.clone()
                 } else {
                     // iOS 26: returns Error dict on cache miss instead of closing connection
                     eprintln!("[mounter] no cached manifest, requesting TSS ticket…");
                     drop(sock);
-                    sock = session.connect_rsd_shim(
-                            "com.apple.mobile.mobile_image_mounter.shim.remote")
+                    sock = session
+                        .connect_rsd_shim("com.apple.mobile.mobile_image_mounter.shim.remote")
                         .context("reconnect mounter shim")?;
                     tss_flow(&mut session, &mut sock, &manifest_bytes, &image_sha384)?
                 }
@@ -104,8 +106,8 @@ pub fn mount(udid: Option<&str>, output: OutputMode) -> Result<()> {
                 // Cache miss — device closed the connection (pre-iOS 26 behaviour)
                 eprintln!("[mounter] no cached manifest, requesting TSS ticket…");
                 drop(sock);
-                sock = session.connect_rsd_shim(
-                        "com.apple.mobile.mobile_image_mounter.shim.remote")
+                sock = session
+                    .connect_rsd_shim("com.apple.mobile.mobile_image_mounter.shim.remote")
                     .context("reconnect mounter shim")?;
                 tss_flow(&mut session, &mut sock, &manifest_bytes, &image_sha384)?
             }
@@ -113,7 +115,10 @@ pub fn mount(udid: Option<&str>, output: OutputMode) -> Result<()> {
     };
 
     // ── 8. ReceiveBytes + upload ─────────────────────────────────────────────
-    eprintln!("[mounter] uploading Image.dmg ({} MB)…", image_bytes.len() / 1_048_576);
+    eprintln!(
+        "[mounter] uploading Image.dmg ({} MB)…",
+        image_bytes.len() / 1_048_576
+    );
     {
         let req = plist_dict! {
             "Command"        => "ReceiveBytes",
@@ -123,7 +128,8 @@ pub fn mount(udid: Option<&str>, output: OutputMode) -> Result<()> {
         };
         send_plist(&mut sock, &req)?;
         let ack = recv_plist(&mut sock).context("ReceiveBytes ack")?;
-        let status = ack.as_dictionary()
+        let status = ack
+            .as_dictionary()
             .and_then(|d| d.get("Status"))
             .and_then(|v| v.as_string())
             .unwrap_or("");
@@ -134,7 +140,8 @@ pub fn mount(udid: Option<&str>, output: OutputMode) -> Result<()> {
         sock.write_all(&image_bytes).context("write Image.dmg")?;
         sock.flush()?;
         let complete = recv_plist(&mut sock).context("upload complete")?;
-        let status2 = complete.as_dictionary()
+        let status2 = complete
+            .as_dictionary()
             .and_then(|d| d.get("Status"))
             .and_then(|v| v.as_string())
             .unwrap_or("");
@@ -154,7 +161,8 @@ pub fn mount(udid: Option<&str>, output: OutputMode) -> Result<()> {
         };
         send_plist(&mut sock, &req)?;
         let resp = recv_plist(&mut sock).context("MountImage")?;
-        let status = resp.as_dictionary()
+        let status = resp
+            .as_dictionary()
             .and_then(|d| d.get("Status"))
             .and_then(|v| v.as_string())
             .unwrap_or("");
@@ -173,8 +181,8 @@ pub fn mount(udid: Option<&str>, output: OutputMode) -> Result<()> {
 
 pub fn status(udid: Option<&str>, output: OutputMode) -> Result<()> {
     let mut session = open_session(udid, ConnectionMode::Rsd)?;
-    let mut sock = session.connect_rsd_shim(
-            "com.apple.mobile.mobile_image_mounter.shim.remote")
+    let mut sock = session
+        .connect_rsd_shim("com.apple.mobile.mobile_image_mounter.shim.remote")
         .context("connect mounter shim")?;
 
     let mut mounted = false;
@@ -184,7 +192,9 @@ pub fn status(udid: Option<&str>, output: OutputMode) -> Result<()> {
         match recv_plist(&mut sock) {
             Ok(resp) => {
                 let present = resp_image_present(&resp);
-                if present { mounted = true; }
+                if present {
+                    mounted = true;
+                }
                 if !output.is_json() {
                     eprintln!("[mounter] LookupImage({img_type}): {resp:?}");
                     if present {
@@ -235,9 +245,9 @@ fn fetch_ddi_files() -> Result<(Vec<u8>, Vec<u8>, Vec<u8>)> {
     let dir = cache_dir();
     std::fs::create_dir_all(&dir)?;
 
-    let img_path  = dir.join("Image.dmg");
+    let img_path = dir.join("Image.dmg");
     let mfst_path = dir.join("BuildManifest.plist");
-    let tc_path   = dir.join("Image.dmg.trustcache");
+    let tc_path = dir.join("Image.dmg.trustcache");
 
     // Use already-cached files if present
     if img_path.exists() && mfst_path.exists() && tc_path.exists() {
@@ -251,34 +261,34 @@ fn fetch_ddi_files() -> Result<(Vec<u8>, Vec<u8>, Vec<u8>)> {
 
     // Prefer the CoreDevice local DDI (/Library/Developer/CoreDevice/CandidateDDIs/iOS_DDI.dmg)
     // — newer build manifest than doronz88's repo, no download needed.
-    let core_device_ddi = PathBuf::from(
-        "/Library/Developer/CoreDevice/CandidateDDIs/iOS_DDI.dmg");
+    let core_device_ddi = PathBuf::from("/Library/Developer/CoreDevice/CandidateDDIs/iOS_DDI.dmg");
     if core_device_ddi.exists() {
         eprintln!("[mounter] extracting DDI files from CoreDevice local cache…");
         match extract_from_core_device_ddi(&core_device_ddi) {
             Ok((img, mfst, tc)) => {
-                std::fs::write(&img_path,  &img)?;
+                std::fs::write(&img_path, &img)?;
                 std::fs::write(&mfst_path, &mfst)?;
-                std::fs::write(&tc_path,   &tc)?;
+                std::fs::write(&tc_path, &tc)?;
                 return Ok((img, mfst, tc));
             }
-            Err(e) => eprintln!("[mounter] CoreDevice DDI extract failed: {e}, falling back to GitHub"),
+            Err(e) => {
+                eprintln!("[mounter] CoreDevice DDI extract failed: {e}, falling back to GitHub")
+            }
         }
     }
 
     // Fall back to downloading from doronz88/DeveloperDiskImage
     eprintln!("[mounter] downloading DDI from github.com/{DDI_REPO}…");
-    let manifest_bytes = github_download(DDI_REPO, DDI_MANIFEST)
-        .context("download BuildManifest.plist")?;
+    let manifest_bytes =
+        github_download(DDI_REPO, DDI_MANIFEST).context("download BuildManifest.plist")?;
     std::fs::write(&mfst_path, &manifest_bytes)?;
 
     eprintln!("[mounter] downloading Image.dmg…");
-    let image_bytes = github_download(DDI_REPO, DDI_IMAGE)
-        .context("download Image.dmg")?;
+    let image_bytes = github_download(DDI_REPO, DDI_IMAGE).context("download Image.dmg")?;
     std::fs::write(&img_path, &image_bytes)?;
 
-    let trustcache_bytes = github_download(DDI_REPO, DDI_TRUSTCACHE)
-        .context("download Image.dmg.trustcache")?;
+    let trustcache_bytes =
+        github_download(DDI_REPO, DDI_TRUSTCACHE).context("download Image.dmg.trustcache")?;
     std::fs::write(&tc_path, &trustcache_bytes)?;
 
     Ok((image_bytes, manifest_bytes, trustcache_bytes))
@@ -292,40 +302,54 @@ fn extract_from_core_device_ddi(ddi_path: &std::path::Path) -> Result<(Vec<u8>, 
         .output();
 
     let out = std::process::Command::new("hdiutil")
-        .args(["attach", ddi_path.to_str().unwrap(),
-               "-readonly", "-mountpoint", mount_point, "-quiet", "-nobrowse"])
+        .args([
+            "attach",
+            ddi_path.to_str().unwrap(),
+            "-readonly",
+            "-mountpoint",
+            mount_point,
+            "-quiet",
+            "-nobrowse",
+        ])
         .output()
         .context("hdiutil attach")?;
     if !out.status.success() {
-        bail!("hdiutil attach failed: {}", String::from_utf8_lossy(&out.stderr));
+        bail!(
+            "hdiutil attach failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
     }
 
     let result = (|| -> Result<(Vec<u8>, Vec<u8>, Vec<u8>)> {
         let restore = PathBuf::from(mount_point).join("Restore");
         let manifest_bytes = std::fs::read(restore.join("BuildManifest.plist"))
             .context("read BuildManifest.plist")?;
-        let manifest: Value = plist::from_bytes(&manifest_bytes)
-            .context("parse BuildManifest.plist")?;
+        let manifest: Value =
+            plist::from_bytes(&manifest_bytes).context("parse BuildManifest.plist")?;
 
         // Find the PersonalizedDMG and LoadableTrustCache file paths from the manifest
-        let identity = manifest.as_dictionary()
+        let identity = manifest
+            .as_dictionary()
             .and_then(|d| d.get("BuildIdentities"))
             .and_then(|v| v.as_array())
             .and_then(|a| a.first())
             .ok_or_else(|| anyhow::anyhow!("no BuildIdentities"))?;
-        let mfst_entries = identity.as_dictionary()
+        let mfst_entries = identity
+            .as_dictionary()
             .and_then(|d| d.get("Manifest"))
             .and_then(|v| v.as_dictionary())
             .ok_or_else(|| anyhow::anyhow!("no Manifest in BuildIdentity"))?;
 
-        let img_rel = mfst_entries.get("PersonalizedDMG")
+        let img_rel = mfst_entries
+            .get("PersonalizedDMG")
             .and_then(|v| v.as_dictionary())
             .and_then(|d| d.get("Info"))
             .and_then(|v| v.as_dictionary())
             .and_then(|d| d.get("Path"))
             .and_then(|v| v.as_string())
             .ok_or_else(|| anyhow::anyhow!("no PersonalizedDMG/Info/Path"))?;
-        let tc_rel = mfst_entries.get("LoadableTrustCache")
+        let tc_rel = mfst_entries
+            .get("LoadableTrustCache")
             .and_then(|v| v.as_dictionary())
             .and_then(|d| d.get("Info"))
             .and_then(|v| v.as_dictionary())
@@ -333,10 +357,8 @@ fn extract_from_core_device_ddi(ddi_path: &std::path::Path) -> Result<(Vec<u8>, 
             .and_then(|v| v.as_string())
             .ok_or_else(|| anyhow::anyhow!("no LoadableTrustCache/Info/Path"))?;
 
-        let image_bytes      = std::fs::read(restore.join(img_rel))
-            .context("read PersonalizedDMG")?;
-        let trustcache_bytes = std::fs::read(restore.join(tc_rel))
-            .context("read trustcache")?;
+        let image_bytes = std::fs::read(restore.join(img_rel)).context("read PersonalizedDMG")?;
+        let trustcache_bytes = std::fs::read(restore.join(tc_rel)).context("read trustcache")?;
 
         Ok((image_bytes, manifest_bytes, trustcache_bytes))
     })();
@@ -363,10 +385,10 @@ fn github_download(repo: &str, path: &str) -> Result<Vec<u8>> {
 
 /// Steps 5–7: query identifiers + nonce, call TSS, reconnect socket.
 fn tss_flow(
-    session:        &mut ios_rs::tunnel::DeviceSession,
-    sock:           &mut ios_rs::usbmux::MuxSocket,
+    session: &mut ios_rs::tunnel::DeviceSession,
+    sock: &mut ios_rs::usbmux::MuxSocket,
     manifest_bytes: &[u8],
-    _image_sha384:  &[u8],
+    _image_sha384: &[u8],
 ) -> Result<Vec<u8>> {
     // 5. QueryPersonalizationIdentifiers
     let req_ids = plist_dict! {
@@ -375,14 +397,15 @@ fn tss_flow(
     };
     send_plist(sock, &req_ids)?;
     let resp_ids = recv_plist(sock).context("QueryPersonalizationIdentifiers")?;
-    let ids = resp_ids.as_dictionary()
+    let ids = resp_ids
+        .as_dictionary()
         .and_then(|d| d.get("PersonalizationIdentifiers"))
         .and_then(|v| v.as_dictionary())
         .ok_or_else(|| anyhow::anyhow!("no PersonalizationIdentifiers in response"))?
         .clone();
 
     let board_id = int_from_plist(&ids, "BoardId")?;
-    let chip_id  = int_from_plist(&ids, "ChipID")?;
+    let chip_id = int_from_plist(&ids, "ChipID")?;
 
     // 6. QueryNonce
     let req_nonce = plist_dict! {
@@ -391,13 +414,21 @@ fn tss_flow(
     };
     send_plist(sock, &req_nonce)?;
     let resp_nonce = recv_plist(sock).context("QueryNonce")?;
-    let nonce = resp_nonce.as_dictionary()
+    let nonce = resp_nonce
+        .as_dictionary()
         .and_then(|d| d.get("PersonalizationNonce"))
-        .and_then(|v| if let Value::Data(b) = v { Some(b.clone()) } else { None })
+        .and_then(|v| {
+            if let Value::Data(b) = v {
+                Some(b.clone())
+            } else {
+                None
+            }
+        })
         .ok_or_else(|| anyhow::anyhow!("no PersonalizationNonce"))?;
 
     // ECID from lockdown
-    let ecid: u64 = session.lockdown()
+    let ecid: u64 = session
+        .lockdown()
         .get_value(None, "UniqueChipID")
         .context("get UniqueChipID")?
         .as_unsigned_integer()
@@ -409,8 +440,8 @@ fn tss_flow(
         .context("TSS request")?;
 
     // Reconnect (some iOS versions close the connection after QueryNonce)
-    *sock = session.connect_rsd_shim(
-            "com.apple.mobile.mobile_image_mounter.shim.remote")
+    *sock = session
+        .connect_rsd_shim("com.apple.mobile.mobile_image_mounter.shim.remote")
         .context("reconnect mounter shim (post-TSS)")?;
 
     Ok(im4m)
@@ -418,34 +449,40 @@ fn tss_flow(
 
 fn tss_request(
     manifest_bytes: &[u8],
-    board_id:       u64,
-    chip_id:        u64,
-    ecid:           u64,
-    nonce:          &[u8],
-    ids:            &plist::Dictionary,
+    board_id: u64,
+    chip_id: u64,
+    ecid: u64,
+    nonce: &[u8],
+    ids: &plist::Dictionary,
 ) -> Result<Vec<u8>> {
     // Parse BuildManifest and find the matching BuildIdentity
-    let mfst: Value = plist::from_bytes(manifest_bytes)
-        .context("parse BuildManifest.plist")?;
-    let identities = mfst.as_dictionary()
+    let mfst: Value = plist::from_bytes(manifest_bytes).context("parse BuildManifest.plist")?;
+    let identities = mfst
+        .as_dictionary()
         .and_then(|d| d.get("BuildIdentities"))
         .and_then(|v| v.as_array())
         .ok_or_else(|| anyhow::anyhow!("no BuildIdentities in manifest"))?;
 
-    let identity = identities.iter().find(|id| {
-        let d = id.as_dictionary();
-        let bid = d.and_then(|d| d.get("ApBoardID"))
-            .and_then(|v| v.as_string())
-            .and_then(parse_hex_or_dec);
-        let cid = d.and_then(|d| d.get("ApChipID"))
-            .and_then(|v| v.as_string())
-            .and_then(parse_hex_or_dec);
-        bid == Some(board_id) && cid == Some(chip_id)
-    }).ok_or_else(|| anyhow::anyhow!(
-        "no BuildIdentity for board_id={board_id:#x} chip_id={chip_id:#x}"
-    ))?;
+    let identity = identities
+        .iter()
+        .find(|id| {
+            let d = id.as_dictionary();
+            let bid = d
+                .and_then(|d| d.get("ApBoardID"))
+                .and_then(|v| v.as_string())
+                .and_then(parse_hex_or_dec);
+            let cid = d
+                .and_then(|d| d.get("ApChipID"))
+                .and_then(|v| v.as_string())
+                .and_then(parse_hex_or_dec);
+            bid == Some(board_id) && cid == Some(chip_id)
+        })
+        .ok_or_else(|| {
+            anyhow::anyhow!("no BuildIdentity for board_id={board_id:#x} chip_id={chip_id:#x}")
+        })?;
 
-    let manifest_entries = identity.as_dictionary()
+    let manifest_entries = identity
+        .as_dictionary()
         .and_then(|d| d.get("Manifest"))
         .and_then(|v| v.as_dictionary())
         .ok_or_else(|| anyhow::anyhow!("no Manifest in BuildIdentity"))?;
@@ -456,30 +493,38 @@ fn tss_request(
         for (i, byt) in b.iter_mut().enumerate() {
             *byt = ((ecid >> (i % 8)) ^ (chip_id >> (i % 4))) as u8;
         }
-        format!("{:08X}-{:04X}-{:04X}-{:04X}-{:012X}",
+        format!(
+            "{:08X}-{:04X}-{:04X}-{:04X}-{:012X}",
             u32::from_le_bytes(b[0..4].try_into().unwrap()),
             u16::from_le_bytes(b[4..6].try_into().unwrap()),
             u16::from_le_bytes(b[6..8].try_into().unwrap()),
             u16::from_le_bytes(b[8..10].try_into().unwrap()),
-            u64::from_le_bytes({let mut x = [0u8;8]; x[..6].copy_from_slice(&b[10..16]); x}),
+            u64::from_le_bytes({
+                let mut x = [0u8; 8];
+                x[..6].copy_from_slice(&b[10..16]);
+                x
+            }),
         )
     };
 
     let mut req = plist::Dictionary::new();
     req.insert("@HostPlatformInfo".into(), Value::String("mac".into()));
-    req.insert("@VersionInfo".into(),      Value::String("libauthinstall-1104.0.9".into()));
-    req.insert("@UUID".into(),             Value::String(random_uuid));
-    req.insert("@ApImg4Ticket".into(),     Value::Boolean(true));
-    req.insert("@BBTicket".into(),         Value::Boolean(true));
-    req.insert("ApBoardID".into(),         Value::Integer((board_id as i64).into()));
-    req.insert("ApChipID".into(),          Value::Integer((chip_id  as i64).into()));
-    req.insert("ApECID".into(),            Value::Integer((ecid     as i64).into()));
-    req.insert("ApNonce".into(),           Value::Data(nonce.to_vec()));
-    req.insert("ApSecurityDomain".into(),  Value::Integer(1.into()));
-    req.insert("ApProductionMode".into(),  Value::Boolean(true));
-    req.insert("ApSecurityMode".into(),    Value::Boolean(true));
-    req.insert("SepNonce".into(),          Value::Data(vec![0u8; 20]));
-    req.insert("UID_MODE".into(),          Value::Boolean(false));
+    req.insert(
+        "@VersionInfo".into(),
+        Value::String("libauthinstall-1104.0.9".into()),
+    );
+    req.insert("@UUID".into(), Value::String(random_uuid));
+    req.insert("@ApImg4Ticket".into(), Value::Boolean(true));
+    req.insert("@BBTicket".into(), Value::Boolean(true));
+    req.insert("ApBoardID".into(), Value::Integer((board_id as i64).into()));
+    req.insert("ApChipID".into(), Value::Integer((chip_id as i64).into()));
+    req.insert("ApECID".into(), Value::Integer((ecid as i64).into()));
+    req.insert("ApNonce".into(), Value::Data(nonce.to_vec()));
+    req.insert("ApSecurityDomain".into(), Value::Integer(1.into()));
+    req.insert("ApProductionMode".into(), Value::Boolean(true));
+    req.insert("ApSecurityMode".into(), Value::Boolean(true));
+    req.insert("SepNonce".into(), Value::Data(vec![0u8; 20]));
+    req.insert("UID_MODE".into(), Value::Boolean(false));
 
     // Forward Ap,* keys from PersonalizationIdentifiers
     for (k, v) in ids {
@@ -490,12 +535,20 @@ fn tss_request(
 
     // Add manifest components (only Trusted=true entries)
     for (component, entry_val) in manifest_entries {
-        if component == "Info" { continue; }
-        let entry = match entry_val.as_dictionary() { Some(d) => d, None => continue };
-        let trusted = entry.get("Trusted")
+        if component == "Info" {
+            continue;
+        }
+        let entry = match entry_val.as_dictionary() {
+            Some(d) => d,
+            None => continue,
+        };
+        let trusted = entry
+            .get("Trusted")
             .and_then(|v| v.as_boolean())
             .unwrap_or(false);
-        if !trusted { continue; }
+        if !trusted {
+            continue;
+        }
 
         // Build entry: Digest + RestoreRequestRules result (skip Info sub-dict)
         let mut tss_entry = plist::Dictionary::new();
@@ -506,7 +559,8 @@ fn tss_request(
 
         // Apply RestoreRequestRules for production devices
         // (ApProductionMode=true, ApSecurityMode=true, ApRequiresImage4=true)
-        if let Some(rules) = entry.get("Info")
+        if let Some(rules) = entry
+            .get("Info")
             .and_then(|v| v.as_dictionary())
             .and_then(|d| d.get("RestoreRequestRules"))
             .and_then(|v| v.as_array())
@@ -523,8 +577,8 @@ fn tss_request(
 
     let resp = ureq::post("http://gs.apple.com/TSS/controller?action=2")
         .set("Content-Type", "text/xml; charset=\"utf-8\"")
-        .set("User-Agent",   "InetURL/1.0")
-        .set("Cache-Control","no-cache")
+        .set("User-Agent", "InetURL/1.0")
+        .set("Cache-Control", "no-cache")
         .send_bytes(&body)
         .context("TSS POST")?;
 
@@ -535,14 +589,22 @@ fn tss_request(
     };
 
     // Parse: STATUS=0&MESSAGE=SUCCESS&REQUEST_STRING=<plist>
-    let plist_str = resp_body.split("REQUEST_STRING=")
+    let plist_str = resp_body
+        .split("REQUEST_STRING=")
         .nth(1)
         .ok_or_else(|| anyhow::anyhow!("TSS response missing REQUEST_STRING: {resp_body}"))?;
-    let tss_response: Value = plist::from_bytes(plist_str.as_bytes())
-        .context("parse TSS response plist")?;
-    let im4m = tss_response.as_dictionary()
+    let tss_response: Value =
+        plist::from_bytes(plist_str.as_bytes()).context("parse TSS response plist")?;
+    let im4m = tss_response
+        .as_dictionary()
         .and_then(|d| d.get("ApImg4Ticket"))
-        .and_then(|v| if let Value::Data(b) = v { Some(b.clone()) } else { None })
+        .and_then(|v| {
+            if let Value::Data(b) = v {
+                Some(b.clone())
+            } else {
+                None
+            }
+        })
         .ok_or_else(|| anyhow::anyhow!("no ApImg4Ticket in TSS response"))?;
 
     Ok(im4m)
@@ -550,21 +612,25 @@ fn tss_request(
 
 fn apply_restore_request_rules(entry: &mut plist::Dictionary, rules: &[Value]) {
     for rule in rules {
-        let rule = match rule.as_dictionary() { Some(d) => d, None => continue };
+        let rule = match rule.as_dictionary() {
+            Some(d) => d,
+            None => continue,
+        };
         let conditions = rule.get("Conditions").and_then(|v| v.as_dictionary());
-        let actions    = rule.get("Actions").and_then(|v| v.as_array());
+        let actions = rule.get("Actions").and_then(|v| v.as_array());
 
-        let all_met = conditions.map(|conds| {
-            conds.iter().all(|(k, v)| match k.as_str() {
-                "ApRawProductionMode" | "ApCurrentProductionMode" =>
-                    v.as_boolean() == Some(true),   // production device
-                "ApRawSecurityMode" =>
-                    v.as_boolean() == Some(true),   // secure mode
-                "ApRequiresImage4" =>
-                    v.as_boolean() == Some(true),   // always true on modern devices
-                _ => true,  // unknown condition: pass
+        let all_met = conditions
+            .map(|conds| {
+                conds.iter().all(|(k, v)| match k.as_str() {
+                    "ApRawProductionMode" | "ApCurrentProductionMode" => {
+                        v.as_boolean() == Some(true)
+                    } // production device
+                    "ApRawSecurityMode" => v.as_boolean() == Some(true), // secure mode
+                    "ApRequiresImage4" => v.as_boolean() == Some(true), // always true on modern devices
+                    _ => true,                                          // unknown condition: pass
+                })
             })
-        }).unwrap_or(true);
+            .unwrap_or(true);
 
         if all_met {
             if let Some(actions) = actions {
