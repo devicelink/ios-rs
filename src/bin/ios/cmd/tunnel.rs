@@ -206,7 +206,11 @@ fn watch_devices(state: State) {
 }
 
 fn handle_client(mut stream: UnixStream, state: &State) -> Result<()> {
-    let req  = recv_plist(&mut stream)?;
+    // A failed initial read usually means a liveness probe (connected + immediately dropped).
+    let req = match recv_plist(&mut stream) {
+        Ok(v)  => v,
+        Err(_) => return Ok(()),
+    };
     let dict = req.as_dictionary().context("request not a dict")?;
 
     // Control requests (no UDID/Service keys)
