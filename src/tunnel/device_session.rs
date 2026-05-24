@@ -148,13 +148,10 @@ impl DeviceSession {
     /// Daemon path: delegates the connection (including RSDCheckin) to the daemon.
     /// Direct path: looks up port in RSD catalog, connects via smoltcp, does RSDCheckin.
     pub fn connect_rsd_shim(&mut self, service_name: &str) -> Result<crate::usbmux::MuxSocket, Error> {
-        match &self.inner {
-            Inner::Daemon { udid, .. } => {
-                let udid = udid.clone();
-                let sock = daemon_connect_service(&udid, service_name)?;
-                return Ok(crate::usbmux::MuxSocket::external(sock));
-            }
-            _ => {}
+        if let Inner::Daemon { udid, .. } = &self.inner {
+            let udid = udid.clone();
+            let sock = daemon_connect_service(&udid, service_name)?;
+            return Ok(crate::usbmux::MuxSocket::external(sock));
         }
 
         // Direct smoltcp path — look up port in RSD catalog then connect.
@@ -211,12 +208,9 @@ impl DeviceSession {
     pub fn connect_rsd_service(&mut self, service_name: &str)
         -> Result<std::os::unix::net::UnixStream, Error>
     {
-        match &self.inner {
-            Inner::Daemon { udid, .. } => {
-                let udid = udid.clone();
-                return daemon_connect_service(&udid, service_name);
-            }
-            _ => {}
+        if let Inner::Daemon { udid, .. } = &self.inner {
+            let udid = udid.clone();
+            return daemon_connect_service(&udid, service_name);
         }
 
         let port = {
@@ -239,14 +233,11 @@ impl DeviceSession {
     /// Daemon path: asks the daemon to proxy the RSD port, does RemoteXPC + handshake locally.
     /// Direct path: connects smoltcp TCP to the RSD port.
     pub fn connect_rsd(&mut self) -> Result<crate::rsd::RsdClient, Error> {
-        match &self.inner {
-            Inner::Daemon { udid, .. } => {
-                let udid = udid.clone();
-                let sock = daemon_connect_service(&udid, "_rsd")?;
-                return crate::rsd::RsdClient::connect_stream(sock)
-                    .map_err(|e| Error::Protocol(format!("RSD via daemon: {e}")));
-            }
-            _ => {}
+        if let Inner::Daemon { udid, .. } = &self.inner {
+            let udid = udid.clone();
+            let sock = daemon_connect_service(&udid, "_rsd")?;
+            return crate::rsd::RsdClient::connect_stream(sock)
+                .map_err(|e| Error::Protocol(format!("RSD via daemon: {e}")));
         }
 
         let tunnel = self.smoltcp_tunnel()

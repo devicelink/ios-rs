@@ -340,7 +340,7 @@ mod tests {
         assert_eq!(items.len(), 3);
         assert_eq!(items[0].as_u64().unwrap(), 1);
         assert_eq!(items[1].as_str().unwrap(), "two");
-        assert_eq!(items[2].as_bool().unwrap(), false);
+        assert!(!items[2].as_bool().unwrap());
     }
 
     #[test]
