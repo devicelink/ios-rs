@@ -199,6 +199,7 @@ fn parse_service_entry(val: &Value) -> Option<ServiceEntry> {
     })
 }
 
+#[cfg(unix)]
 fn copy_half(src: &mut dyn Read, dst: &mut dyn Write) {
     let mut buf = [0u8; 16384];
     loop {

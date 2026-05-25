@@ -465,6 +465,7 @@ fn daemon_read_exact(s: &mut std::os::unix::net::UnixStream, buf: &mut [u8]) -> 
     Ok(())
 }
 
+#[cfg(unix)]
 fn read_exact<R: Read>(r: &mut R, buf: &mut [u8]) -> std::io::Result<()> {
     let mut done = 0;
     while done < buf.len() {
