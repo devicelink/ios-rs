@@ -3,8 +3,14 @@ name          = "ios-rs"
 version       = "0.1.0"
 edition       = "2021"
 authors       = ["Andreas Lüdeke"]
+description   = "Rust library and CLI for communicating with iOS devices over USB and Wi-Fi"
 license       = "MIT"
+repository    = "https://github.com/devicelink/ios-rs"
+readme        = "README.md"
+keywords      = ["ios", "iphone", "apple", "mobile", "devicelink"]
+categories    = ["development-tools", "api-bindings"]
 rust-version  = "1.75"
+exclude       = ["devimages/", "re-work/", "orientation-helper/"]
 
 [lib]
 name = "ios_rs"
