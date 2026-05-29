@@ -337,6 +337,32 @@ fn watch_devices(state: State) {
     };
     loop {
         match listener.next() {
+            Ok(Event::DeviceAttached(dev)) => {
+                let udid = dev.serial.clone();
+                let s = Arc::clone(&state);
+                std::thread::Builder::new()
+                    .name(format!("tunnel-{udid}"))
+                    .spawn(move || {
+                        if let Err(e) = ensure_tunnel(&udid, &s) {
+                            eprintln!("[ios-rsd] tunnel failed for {udid}: {e:#}");
+                        }
+                    })
+                    .ok();
+            }
+            Ok(Event::DeviceList(devices)) => {
+                for dev in devices {
+                    let udid = dev.serial.clone();
+                    let s = Arc::clone(&state);
+                    std::thread::Builder::new()
+                        .name(format!("tunnel-{udid}"))
+                        .spawn(move || {
+                            if let Err(e) = ensure_tunnel(&udid, &s) {
+                                eprintln!("[ios-rsd] tunnel failed for {udid}: {e:#}");
+                            }
+                        })
+                        .ok();
+                }
+            }
             Ok(Event::DeviceDetached { device_id }) => {
                 let mut map = state.lock().unwrap();
                 map.retain(|udid, dt| {
