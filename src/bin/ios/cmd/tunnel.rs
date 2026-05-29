@@ -12,7 +12,8 @@
 ///     "_rsd"  — raw proxy to the device's RSD port (58783); no RSDCheckin
 ///
 ///   Control requests (no UDID/Service)
-///     {Request: "List"}     → {Status: "Ok", Devices: [{UDID, Services}…]}
+///     {Request: "List"}     → {Status: "Ok", Devices: [{UDID, ProductType, OSVersion,
+///                                                        DeviceName, ECID, Services}…]}
 ///     {Request: "Shutdown"} → daemon exits
 use std::collections::HashMap;
 use std::io::{self, Read, Write};
@@ -23,7 +24,8 @@ use std::time::Duration;
 
 use crate::cmd::output::{print_json, ActionResult, OutputMode};
 use anyhow::{bail, Context, Result};
-use ios_rs::rsd::ServiceEntry;
+use ios_rs::lockdown::LockdownSession;
+use ios_rs::rsd::{PeerInfo, ServiceEntry};
 use ios_rs::tunnel::{detect_version, Ios17Tunnel, SmoltcpTunnel, DAEMON_SOCKET};
 use ios_rs::usbmux::{Connection as MuxConn, Event, MuxSocket};
 
@@ -83,6 +85,9 @@ struct DeviceTunnel {
     tunnel: Arc<SmoltcpTunnel>,
     services: HashMap<String, ServiceEntry>,
     device_id: u32,
+    peer_info: PeerInfo,
+    device_name: String,
+    ecid: u64,
 }
 
 type State = Arc<Mutex<HashMap<String, DeviceTunnel>>>;
@@ -156,6 +161,10 @@ pub fn daemon(listen: Option<String>) -> Result<()> {
 #[derive(serde::Serialize)]
 struct TunnelEntry {
     udid: String,
+    product_type: String,
+    os_version: String,
+    device_name: String,
+    ecid: u64,
     services: u64,
 }
 
@@ -255,16 +264,26 @@ pub fn list(listen: Option<String>, output: OutputMode) -> Result<()> {
             .iter()
             .filter_map(|entry| {
                 let dd = entry.as_dictionary()?;
-                let udid = dd
-                    .get("UDID")
-                    .and_then(|v| v.as_string())
-                    .unwrap_or("?")
-                    .to_owned();
-                let services = dd
-                    .get("Services")
-                    .and_then(|v| v.as_unsigned_integer())
-                    .unwrap_or(0);
-                Some(TunnelEntry { udid, services })
+                let str_val = |k| {
+                    dd.get(k)
+                        .and_then(|v| v.as_string())
+                        .unwrap_or("")
+                        .to_owned()
+                };
+                Some(TunnelEntry {
+                    udid: str_val("UDID"),
+                    product_type: str_val("ProductType"),
+                    os_version: str_val("OSVersion"),
+                    device_name: str_val("DeviceName"),
+                    ecid: dd
+                        .get("ECID")
+                        .and_then(|v| v.as_unsigned_integer())
+                        .unwrap_or(0),
+                    services: dd
+                        .get("Services")
+                        .and_then(|v| v.as_unsigned_integer())
+                        .unwrap_or(0),
+                })
             })
             .collect();
         return print_json(&entries);
@@ -277,11 +296,23 @@ pub fn list(listen: Option<String>, output: OutputMode) -> Result<()> {
     for entry in devices {
         if let Some(dd) = entry.as_dictionary() {
             let udid = dd.get("UDID").and_then(|v| v.as_string()).unwrap_or("?");
+            let name = dd
+                .get("DeviceName")
+                .and_then(|v| v.as_string())
+                .unwrap_or("?");
+            let product = dd
+                .get("ProductType")
+                .and_then(|v| v.as_string())
+                .unwrap_or("?");
+            let os = dd
+                .get("OSVersion")
+                .and_then(|v| v.as_string())
+                .unwrap_or("?");
             let n = dd
                 .get("Services")
                 .and_then(|v| v.as_unsigned_integer())
                 .unwrap_or(0);
-            println!("{udid}  ({n} services)");
+            println!("{udid}  {name}  {product}  iOS {os}  ({n} services)");
         }
     }
     Ok(())
@@ -435,6 +466,22 @@ fn handle_list(stream: &mut MuxSocket, state: &State) -> Result<()> {
                 let mut d = plist::Dictionary::new();
                 d.insert("UDID".into(), plist::Value::String(udid.clone()));
                 d.insert(
+                    "ProductType".into(),
+                    plist::Value::String(dt.peer_info.product_type.clone()),
+                );
+                d.insert(
+                    "OSVersion".into(),
+                    plist::Value::String(dt.peer_info.os_version.clone()),
+                );
+                d.insert(
+                    "DeviceName".into(),
+                    plist::Value::String(dt.device_name.clone()),
+                );
+                d.insert(
+                    "ECID".into(),
+                    plist::Value::Integer(plist::Integer::from(dt.ecid as i64)),
+                );
+                d.insert(
                     "Services".into(),
                     plist::Value::Integer(plist::Integer::from(dt.services.len() as i64)),
                 );
@@ -463,10 +510,24 @@ fn ensure_tunnel(udid: &str, state: &State) -> Result<()> {
         .with_context(|| format!("device {udid} not connected"))?;
     let device_id = device.device_id;
 
+    // Fetch device_name and ECID from lockdown before establishing CDTunnel.
+    let (device_name, ecid) = {
+        let mut ld = LockdownSession::open_paired(device_id, udid)
+            .context("lockdown open for device metadata")?;
+        let info = ld.get_all_values().context("lockdown get_all_values")?;
+        let ecid = ld
+            .get_value(None, "UniqueChipID")
+            .unwrap_or(plist::Value::Integer(0.into()))
+            .as_unsigned_integer()
+            .unwrap_or(0);
+        (info.device_name, ecid)
+    };
+
     let version = detect_version(device_id).context("detect version")?;
     let t = Ios17Tunnel::connect_via_lockdown_udid(device_id, Some(udid), version)
         .context("CDTunnel")?;
     let rsd = t.connect_rsd().context("RSD handshake")?;
+    let peer_info = rsd.peer_info().clone();
     let services = rsd.services().clone();
     let n = services.len();
 
@@ -477,6 +538,9 @@ fn ensure_tunnel(udid: &str, state: &State) -> Result<()> {
             tunnel: Arc::new(t.stack),
             services,
             device_id,
+            peer_info,
+            device_name,
+            ecid,
         });
     }
     eprintln!("[ios-rsd] tunnel ready for {udid} ({n} services)");
