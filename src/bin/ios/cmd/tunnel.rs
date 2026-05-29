@@ -14,12 +14,16 @@
 ///   Control requests (no UDID/Service)
 ///     {Request: "List"}     → {Status: "Ok", Devices: [{UDID, ProductType, OSVersion,
 ///                                                        DeviceName, ECID, Services}…]}
+///     {Request: "Watch"}    → stream of {Event: "Attached", UDID, ProductType, OSVersion,
+///                                                            DeviceName, ECID, Services}
+///                                                           {Event: "Detached", UDID}
+///                             (bootstrapped with current tunnels; connection stays open)
 ///     {Request: "Shutdown"} → daemon exits
 use std::collections::HashMap;
 use std::io::{self, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::sync::{Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 
 use crate::cmd::output::{print_json, ActionResult, OutputMode};
@@ -90,7 +94,48 @@ struct DeviceTunnel {
     ecid: u64,
 }
 
-type State = Arc<Mutex<HashMap<String, DeviceTunnel>>>;
+#[derive(Clone)]
+enum WatchEvent {
+    Attached(plist::Dictionary),
+    Detached { udid: String },
+}
+
+struct Shared {
+    tunnels: HashMap<String, DeviceTunnel>,
+    watchers: Vec<mpsc::Sender<WatchEvent>>,
+}
+
+type State = Arc<Mutex<Shared>>;
+
+fn broadcast_locked(s: &mut Shared, event: WatchEvent) {
+    s.watchers.retain(|tx| tx.send(event.clone()).is_ok());
+}
+
+fn tunnel_plist_dict(udid: &str, dt: &DeviceTunnel) -> plist::Dictionary {
+    let mut d = plist::Dictionary::new();
+    d.insert("UDID".into(), plist::Value::String(udid.to_owned()));
+    d.insert(
+        "ProductType".into(),
+        plist::Value::String(dt.peer_info.product_type.clone()),
+    );
+    d.insert(
+        "OSVersion".into(),
+        plist::Value::String(dt.peer_info.os_version.clone()),
+    );
+    d.insert(
+        "DeviceName".into(),
+        plist::Value::String(dt.device_name.clone()),
+    );
+    d.insert(
+        "ECID".into(),
+        plist::Value::Integer(plist::Integer::from(dt.ecid as i64)),
+    );
+    d.insert(
+        "Services".into(),
+        plist::Value::Integer(plist::Integer::from(dt.services.len() as i64)),
+    );
+    d
+}
 
 // ── public CLI entry-points ───────────────────────────────────────────────────
 
@@ -107,7 +152,10 @@ pub fn daemon(listen: Option<String>) -> Result<()> {
         ListenAddr::Tcp(_) => None,
     };
 
-    let state: State = Arc::new(Mutex::new(HashMap::new()));
+    let state: State = Arc::new(Mutex::new(Shared {
+        tunnels: HashMap::new(),
+        watchers: Vec::new(),
+    }));
 
     let watcher_state = Arc::clone(&state);
     std::thread::Builder::new()
@@ -364,15 +412,20 @@ fn watch_devices(state: State) {
                 }
             }
             Ok(Event::DeviceDetached { device_id }) => {
-                let mut map = state.lock().unwrap();
-                map.retain(|udid, dt| {
+                let mut s = state.lock().unwrap();
+                let mut detached = Vec::new();
+                s.tunnels.retain(|udid, dt| {
                     if dt.device_id == device_id {
                         eprintln!("[ios-rsd] {udid} disconnected — tunnel removed");
+                        detached.push(udid.clone());
                         false
                     } else {
                         true
                     }
                 });
+                for udid in detached {
+                    broadcast_locked(&mut s, WatchEvent::Detached { udid });
+                }
             }
             Ok(_) => {}
             Err(e) => {
@@ -395,6 +448,7 @@ fn handle_client(mut stream: MuxSocket, state: &State, socket_path: Option<&str>
     if let Some(rt) = dict.get("Request").and_then(|v| v.as_string()) {
         match rt {
             "List" => return handle_list(&mut stream, state),
+            "Watch" => return handle_watch(stream, state),
             "Shutdown" => {
                 send_ok(&mut stream).ok();
                 eprintln!("[ios-rsd] shutdown requested");
@@ -426,8 +480,8 @@ fn handle_client(mut stream: MuxSocket, state: &State, socket_path: Option<&str>
     // "_rsd" — raw proxy to the RSD port; RemoteXPC + handshake done by the client.
     if service == "_rsd" {
         let (tunnel, server_addr, rsd_port) = {
-            let map = state.lock().unwrap();
-            let dt = map.get(&udid).context("tunnel vanished")?;
+            let s = state.lock().unwrap();
+            let dt = s.tunnels.get(&udid).context("tunnel vanished")?;
             (
                 Arc::clone(&dt.tunnel),
                 dt.tunnel.params.server_addr,
@@ -446,12 +500,12 @@ fn handle_client(mut stream: MuxSocket, state: &State, socket_path: Option<&str>
 
     // Regular service — look up port in RSD catalog.
     let port = {
-        let map = state.lock().unwrap();
-        let dt = map.get(&udid).context("tunnel vanished")?;
+        let s = state.lock().unwrap();
+        let dt = s.tunnels.get(&udid).context("tunnel vanished")?;
         match dt.services.get(&service).map(|e| e.port) {
             Some(p) => p,
             None => {
-                drop(map);
+                drop(s);
                 return send_err(
                     &mut stream,
                     &format!("service '{service}' not in RSD catalog"),
@@ -462,8 +516,8 @@ fn handle_client(mut stream: MuxSocket, state: &State, socket_path: Option<&str>
 
     // Clone Arc so connect() doesn't hold the mutex.
     let (tunnel, server_addr) = {
-        let map = state.lock().unwrap();
-        let dt = map.get(&udid).context("tunnel vanished")?;
+        let s = state.lock().unwrap();
+        let dt = s.tunnels.get(&udid).context("tunnel vanished")?;
         (Arc::clone(&dt.tunnel), dt.tunnel.params.server_addr)
     };
 
@@ -486,33 +540,10 @@ fn handle_client(mut stream: MuxSocket, state: &State, socket_path: Option<&str>
 
 fn handle_list(stream: &mut MuxSocket, state: &State) -> Result<()> {
     let devices: Vec<plist::Value> = {
-        let map = state.lock().unwrap();
-        map.iter()
-            .map(|(udid, dt)| {
-                let mut d = plist::Dictionary::new();
-                d.insert("UDID".into(), plist::Value::String(udid.clone()));
-                d.insert(
-                    "ProductType".into(),
-                    plist::Value::String(dt.peer_info.product_type.clone()),
-                );
-                d.insert(
-                    "OSVersion".into(),
-                    plist::Value::String(dt.peer_info.os_version.clone()),
-                );
-                d.insert(
-                    "DeviceName".into(),
-                    plist::Value::String(dt.device_name.clone()),
-                );
-                d.insert(
-                    "ECID".into(),
-                    plist::Value::Integer(plist::Integer::from(dt.ecid as i64)),
-                );
-                d.insert(
-                    "Services".into(),
-                    plist::Value::Integer(plist::Integer::from(dt.services.len() as i64)),
-                );
-                plist::Value::Dictionary(d)
-            })
+        let s = state.lock().unwrap();
+        s.tunnels
+            .iter()
+            .map(|(udid, dt)| plist::Value::Dictionary(tunnel_plist_dict(udid, dt)))
             .collect()
     };
     let mut resp = plist::Dictionary::new();
@@ -521,9 +552,44 @@ fn handle_list(stream: &mut MuxSocket, state: &State) -> Result<()> {
     send_plist(stream, &plist::Value::Dictionary(resp))
 }
 
+fn handle_watch(mut stream: MuxSocket, state: &State) -> Result<()> {
+    let (tx, rx) = mpsc::channel();
+    {
+        let mut s = state.lock().unwrap();
+        // Bootstrap: send all currently active tunnels as Attached events.
+        for (udid, dt) in &s.tunnels {
+            let dict = tunnel_plist_dict(udid, dt);
+            tx.send(WatchEvent::Attached(dict)).ok();
+        }
+        s.watchers.push(tx);
+    }
+    for event in rx {
+        let val = watch_event_to_plist(event);
+        if send_plist(&mut stream, &val).is_err() {
+            break;
+        }
+    }
+    Ok(())
+}
+
+fn watch_event_to_plist(event: WatchEvent) -> plist::Value {
+    match event {
+        WatchEvent::Attached(mut dict) => {
+            dict.insert("Event".into(), plist::Value::String("Attached".into()));
+            plist::Value::Dictionary(dict)
+        }
+        WatchEvent::Detached { udid } => {
+            let mut d = plist::Dictionary::new();
+            d.insert("Event".into(), plist::Value::String("Detached".into()));
+            d.insert("UDID".into(), plist::Value::String(udid));
+            plist::Value::Dictionary(d)
+        }
+    }
+}
+
 /// Establish (or reuse) a CDTunnel + smoltcp stack for `udid`.
 fn ensure_tunnel(udid: &str, state: &State) -> Result<()> {
-    if state.lock().unwrap().contains_key(udid) {
+    if state.lock().unwrap().tunnels.contains_key(udid) {
         return Ok(());
     }
     eprintln!("[ios-rsd] establishing tunnel for {udid}…");
@@ -558,16 +624,26 @@ fn ensure_tunnel(udid: &str, state: &State) -> Result<()> {
     let n = services.len();
 
     {
-        let mut map = state.lock().unwrap();
-        // or_insert: safe to lose the race — the winner's tunnel is used.
-        map.entry(udid.to_owned()).or_insert(DeviceTunnel {
-            tunnel: Arc::new(t.stack),
-            services,
-            device_id,
-            peer_info,
-            device_name,
-            ecid,
-        });
+        let mut s = state.lock().unwrap();
+        // Use Entry to detect whether we actually insert (two threads may race here).
+        let newly_inserted = match s.tunnels.entry(udid.to_owned()) {
+            std::collections::hash_map::Entry::Occupied(_) => false,
+            std::collections::hash_map::Entry::Vacant(v) => {
+                v.insert(DeviceTunnel {
+                    tunnel: Arc::new(t.stack),
+                    services,
+                    device_id,
+                    peer_info,
+                    device_name,
+                    ecid,
+                });
+                true
+            }
+        };
+        if newly_inserted {
+            let dict = tunnel_plist_dict(udid, s.tunnels.get(udid).unwrap());
+            broadcast_locked(&mut s, WatchEvent::Attached(dict));
+        }
     }
     eprintln!("[ios-rsd] tunnel ready for {udid} ({n} services)");
     Ok(())
