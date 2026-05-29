@@ -82,6 +82,33 @@ impl RsdClient {
         Self::from_conn(conn)
     }
 
+    /// Accept any bidirectional stream (e.g. a `MuxSocket` from the tunnel daemon) and do the
+    /// RSD handshake. Routes through a loopback TCP relay because `RemoteXpcConn` uses TcpStream.
+    pub fn connect_mux_stream(socket: crate::usbmux::MuxSocket) -> Result<Self, Error> {
+        use std::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").map_err(crate::remotexpc::Error::Io)?;
+        let local_addr = listener.local_addr().map_err(crate::remotexpc::Error::Io)?;
+
+        std::thread::spawn(move || {
+            let Ok((tcp, _)) = listener.accept() else {
+                return;
+            };
+            let mut sock_r = match socket.try_clone() {
+                Ok(s) => s,
+                Err(_) => return,
+            };
+            let mut sock_w = socket;
+            let mut tcp_w = tcp.try_clone().unwrap();
+            let mut tcp_r = tcp;
+            let t1 = std::thread::spawn(move || copy_half(&mut sock_r, &mut tcp_w));
+            let t2 = std::thread::spawn(move || copy_half(&mut tcp_r, &mut sock_w));
+            let _ = (t1.join(), t2.join());
+        });
+
+        let conn = RemoteXpcConn::connect(local_addr)?;
+        Self::from_conn(conn)
+    }
+
     fn from_conn(conn: RemoteXpcConn) -> Result<Self, Error> {
         // The device sends a Handshake on the SC stream, possibly after some init frames.
         // Loop until we find a message with a "Properties" key.
@@ -199,7 +226,6 @@ fn parse_service_entry(val: &Value) -> Option<ServiceEntry> {
     })
 }
 
-#[cfg(unix)]
 fn copy_half(src: &mut dyn Read, dst: &mut dyn Write) {
     let mut buf = [0u8; 16384];
     loop {

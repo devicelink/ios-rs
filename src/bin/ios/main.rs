@@ -293,6 +293,9 @@ enum Cmd {
 
     /// Manage the persistent RSD tunnel daemon
     Tunnel {
+        /// Daemon listen address: unix:///path or tcp://host:port (env: IOS_TUNNEL_SOCKET_ADDRESS)
+        #[arg(long)]
+        listen: Option<String>,
         #[command(subcommand)]
         action: TunnelAction,
     },
@@ -852,11 +855,11 @@ fn main() -> Result<()> {
             udid,
         } => cmd::timezone::run(udid.as_deref(), timezone.as_deref(), sync, mode, output),
         Cmd::Rsd { udid } => cmd::rsd::run(udid.as_deref(), output),
-        Cmd::Tunnel { action } => match action {
-            TunnelAction::Start => cmd::tunnel::start(output),
-            TunnelAction::Stop => cmd::tunnel::stop(output),
-            TunnelAction::List => cmd::tunnel::list(output),
-            TunnelAction::Daemon => cmd::tunnel::daemon(),
+        Cmd::Tunnel { action, listen } => match action {
+            TunnelAction::Start => cmd::tunnel::start(listen, output),
+            TunnelAction::Stop => cmd::tunnel::stop(listen, output),
+            TunnelAction::List => cmd::tunnel::list(listen, output),
+            TunnelAction::Daemon => cmd::tunnel::daemon(listen),
         },
         Cmd::Mounter { action } => match action {
             MounterAction::Mount { udid } => cmd::mounter::mount(udid.as_deref(), output),

@@ -20,8 +20,15 @@ use super::error::Error;
 use super::mode::ConnectionMode;
 use super::version::{detect_version, IosVersion};
 
-/// Unix socket used by the RSD tunnel daemon.
+/// Default Unix socket path for the RSD tunnel daemon.
 pub const DAEMON_SOCKET: &str = "/tmp/ios-rsd.sock";
+
+/// Environment variable that overrides where the daemon listens / where clients connect.
+///
+/// Accepted formats (mirrors `USBMUXD_SOCKET_ADDRESS` convention):
+///   `unix:///tmp/ios-rsd.sock`  — Unix domain socket (default)
+///   `tcp://127.0.0.1:7776`      — TCP socket
+pub const DAEMON_SOCKET_ENV: &str = "IOS_TUNNEL_SOCKET_ADDRESS";
 
 /// Active transport for a device session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -257,7 +264,7 @@ impl DeviceSession {
     pub fn connect_rsd_service(
         &mut self,
         service_name: &str,
-    ) -> Result<std::os::unix::net::UnixStream, Error> {
+    ) -> Result<crate::usbmux::MuxSocket, Error> {
         if let Inner::Daemon { udid, .. } = &self.inner {
             let udid = udid.clone();
             return daemon_connect_service(&udid, service_name);
@@ -276,7 +283,9 @@ impl DeviceSession {
             .smoltcp_tunnel_ref()
             .ok_or_else(|| Error::Protocol("no CDTunnel available".into()))?;
         let server_addr = tunnel.params.server_addr;
-        tunnel.connect(server_addr, port)
+        tunnel
+            .connect(server_addr, port)
+            .map(crate::usbmux::MuxSocket::Unix)
     }
 
     pub fn is_rsd(&self) -> bool {
@@ -299,7 +308,7 @@ impl DeviceSession {
         if let Inner::Daemon { udid, .. } = &self.inner {
             let udid = udid.clone();
             let sock = daemon_connect_service(&udid, "_rsd")?;
-            return crate::rsd::RsdClient::connect_stream(sock)
+            return crate::rsd::RsdClient::connect_mux_stream(sock)
                 .map_err(|e| Error::Protocol(format!("RSD via daemon: {e}")));
         }
 
@@ -339,7 +348,7 @@ fn try_daemon_path(udid: &str, device_id: u32) -> Result<(Inner, ActivePath), Er
 
 #[cfg(unix)]
 fn daemon_is_running() -> bool {
-    std::os::unix::net::UnixStream::connect(DAEMON_SOCKET).is_ok()
+    open_daemon_conn().is_ok()
 }
 
 #[cfg(unix)]
@@ -360,7 +369,7 @@ fn wait_for_daemon() -> Result<(), Error> {
     use std::time::{Duration, Instant};
     let deadline = Instant::now() + std::time::Duration::from_secs(15);
     loop {
-        if std::os::unix::net::UnixStream::connect(DAEMON_SOCKET).is_ok() {
+        if open_daemon_conn().is_ok() {
             return Ok(());
         }
         if Instant::now() >= deadline {
@@ -394,17 +403,31 @@ fn try_rsd(device: &Device, version: IosVersion) -> Result<(Inner, ActivePath), 
 
 // ── daemon IPC client ─────────────────────────────────────────────────────────
 
-/// Connect to the daemon and request a proxied connection to `service` for `udid`.
-/// On success returns a `UnixStream` that is a transparent byte pipe to the service.
+/// Open a raw connection to the daemon, honouring `IOS_TUNNEL_SOCKET_ADDRESS`.
 #[cfg(unix)]
-fn daemon_connect_service(
-    udid: &str,
-    service: &str,
-) -> Result<std::os::unix::net::UnixStream, Error> {
-    use std::os::unix::net::UnixStream;
+fn open_daemon_conn() -> Result<crate::usbmux::MuxSocket, Error> {
+    let addr =
+        std::env::var(DAEMON_SOCKET_ENV).unwrap_or_else(|_| format!("unix://{DAEMON_SOCKET}"));
+    if let Some(path) = addr.strip_prefix("unix://") {
+        std::os::unix::net::UnixStream::connect(path)
+            .map(crate::usbmux::MuxSocket::Unix)
+            .map_err(|e| Error::Protocol(format!("daemon connect {path}: {e}")))
+    } else if let Some(hostport) = addr.strip_prefix("tcp://") {
+        std::net::TcpStream::connect(hostport)
+            .map(crate::usbmux::MuxSocket::Tcp)
+            .map_err(|e| Error::Protocol(format!("daemon connect {hostport}: {e}")))
+    } else {
+        Err(Error::Protocol(format!(
+            "{DAEMON_SOCKET_ENV} must start with unix:// or tcp://: {addr}"
+        )))
+    }
+}
 
-    let mut sock = UnixStream::connect(DAEMON_SOCKET)
-        .map_err(|e| Error::Protocol(format!("daemon connect: {e}")))?;
+/// Connect to the daemon and request a proxied connection to `service` for `udid`.
+/// On success the returned `MuxSocket` is a transparent byte pipe to the service.
+#[cfg(unix)]
+fn daemon_connect_service(udid: &str, service: &str) -> Result<crate::usbmux::MuxSocket, Error> {
+    let mut sock = open_daemon_conn()?;
 
     let mut req = plist::Dictionary::new();
     req.insert("UDID".into(), plist::Value::String(udid.into()));
@@ -450,8 +473,7 @@ fn daemon_connect_service(
     }
 }
 
-#[cfg(unix)]
-fn daemon_read_exact(s: &mut std::os::unix::net::UnixStream, buf: &mut [u8]) -> Result<(), Error> {
+fn daemon_read_exact(s: &mut impl Read, buf: &mut [u8]) -> Result<(), Error> {
     let mut done = 0;
     while done < buf.len() {
         let n = s
