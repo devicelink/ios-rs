@@ -11,7 +11,7 @@ mod smoltcp_stack;
 mod version;
 
 pub use cdtunnel::{CdTunnelConn, TunnelParams};
-pub use device_session::{ActivePath, DeviceSession, DAEMON_SOCKET};
+pub use device_session::{ActivePath, DeviceSession, DAEMON_SOCKET, DAEMON_SOCKET_ENV};
 pub use error::Error;
 #[cfg(unix)]
 pub use ios17::Ios17Tunnel;

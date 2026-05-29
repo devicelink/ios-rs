@@ -64,6 +64,42 @@ readme-check:
         exit 1; \
     }
 
+# ── Install ──────────────────────────────────────────────────────────────────
+
+PLIST := env_var("HOME") + "/Library/LaunchAgents/io.devicelink.ios-rsd.plist"
+INSTALL_PATH := env_var("HOME") + "/.cargo/bin/ios"
+
+# Install ios to ~/.cargo/bin
+install:
+    cargo install --path . --bin ios --features cli --locked
+    @echo "Installed to {{ INSTALL_PATH }}"
+
+# Register (or reload) the tunnel daemon LaunchAgent
+daemon-load:
+    @mkdir -p "$(dirname "{{ PLIST }}")"
+    @printf '%s\n' \
+        '<?xml version="1.0" encoding="UTF-8"?>' \
+        '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
+        '<plist version="1.0"><dict>' \
+        '  <key>Label</key><string>io.devicelink.ios-rsd</string>' \
+        '  <key>ProgramArguments</key><array>' \
+        "  <string>{{ INSTALL_PATH }}</string>" \
+        '  <string>tunnel</string><string>daemon</string>' \
+        '  </array>' \
+        '  <key>RunAtLoad</key><true/>' \
+        '  <key>KeepAlive</key><true/>' \
+        '  <key>StandardErrorPath</key><string>/tmp/ios-rsd.log</string>' \
+        '</dict></plist>' \
+        > "{{ PLIST }}"
+    -launchctl unload "{{ PLIST }}" 2>/dev/null
+    launchctl load "{{ PLIST }}"
+    @echo "Daemon registered and started"
+
+# Unload the tunnel daemon LaunchAgent
+daemon-unload:
+    launchctl unload "{{ PLIST }}"
+    @echo "Daemon stopped and unregistered"
+
 # ── Combined ─────────────────────────────────────────────────────────────────
 
 # Run everything CI runs (build, test, lint, readme check)
