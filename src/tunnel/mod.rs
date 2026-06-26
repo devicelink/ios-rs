@@ -14,7 +14,7 @@ pub use cdtunnel::{CdTunnelConn, TunnelParams};
 pub use device_session::{ActivePath, DeviceSession, DAEMON_SOCKET, DAEMON_SOCKET_ENV};
 pub use error::Error;
 #[cfg(unix)]
-pub use ios17::Ios17Tunnel;
+pub use ios17::{Ios17Tunnel, RawCdStream};
 pub use mode::ConnectionMode;
 #[cfg(unix)]
 pub use smoltcp_stack::SmoltcpTunnel;

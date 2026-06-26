@@ -1,5 +1,5 @@
 /// iOS 17+ tunnel management.
-use std::io::BufReader;
+use std::io::{BufReader, Read, Write};
 use std::net::TcpStream;
 use std::sync::Arc;
 use std::time::Duration;
@@ -128,6 +128,94 @@ impl Ios17Tunnel {
             self.stack.params.server_rsd_port,
         )?;
         RsdClient::connect_stream(stream).map_err(|e| Error::Protocol(format!("RSD connect: {e}")))
+    }
+
+    /// Establish a CoreDeviceProxy CDTunnel and return the RAW post-handshake stream
+    /// (TLS or plain) plus the negotiated tunnel params — WITHOUT building a smoltcp IP
+    /// stack. The caller splices the raw back-to-back IPv6 packets straight through
+    /// (a transparent relay, matching go-ios/devicefarm's ios-relay), instead of
+    /// terminating the tunnel and re-proxying per service. Mirrors the connect steps of
+    /// `connect_via_lockdown_udid` but keeps the raw stream.
+    ///
+    /// NOTE: this opens a SEPARATE CoreDeviceProxy session from any smoltcp tunnel the
+    /// daemon already holds for the device — relies on the device tolerating a second
+    /// concurrent CoreDeviceProxy session (each gets its own client/server IPv6 pair).
+    pub fn connect_raw_cdtunnel(
+        device_id: u32,
+        udid: &str,
+    ) -> Result<(RawCdStream, super::cdtunnel::TunnelParams), Error> {
+        let mut session = LockdownSession::open_paired(device_id, udid)?;
+        let svc = session.start_service(CORE_DEVICE_PROXY)?;
+        let tcp: TcpStream = {
+            let socket = MuxConn::open()?.open_tunnel(device_id, svc.port)?;
+            match socket {
+                crate::usbmux::MuxSocket::Tcp(s) => s,
+                #[cfg(unix)]
+                crate::usbmux::MuxSocket::Unix(unix) => unix_to_tcp(unix)
+                    .map_err(|e| Error::Protocol(format!("Unix→TCP relay: {e}")))?,
+                crate::usbmux::MuxSocket::External(_) => {
+                    return Err(Error::Protocol(
+                        "CoreDeviceProxy requires a socket stream".into(),
+                    ))
+                }
+            }
+        };
+        let (stream, params) = if svc.enable_service_ssl {
+            let pair = PairRecord::read_from_usbmuxd(udid)?;
+            let mut tls = tls_wrap(tcp, &pair)?;
+            tls.get_ref().set_read_timeout(Some(HANDSHAKE_TIMEOUT))?;
+            let params = CdTunnelConn::handshake_params(&mut tls)?;
+            (RawCdStream::Tls(Box::new(tls)), params)
+        } else {
+            let mut tcp = tcp;
+            tcp.set_read_timeout(Some(HANDSHAKE_TIMEOUT))?;
+            let params = CdTunnelConn::handshake_params(&mut tcp)?;
+            (RawCdStream::Plain(tcp), params)
+        };
+        drop(session);
+        Ok((stream, params))
+    }
+}
+
+/// A raw (un-smoltcp'd) CoreDeviceProxy CDTunnel stream — TLS-wrapped or plain.
+/// After the handshake it carries back-to-back raw IPv6 packets. Used by the daemon's
+/// RawTunnel request to splice the device tunnel straight to a client.
+pub enum RawCdStream {
+    Tls(Box<StreamOwned<ClientConnection, TcpStream>>),
+    Plain(TcpStream),
+}
+
+impl RawCdStream {
+    /// The underlying TcpStream — for set_read_timeout / set_nonblocking.
+    pub fn tcp(&self) -> &TcpStream {
+        match self {
+            RawCdStream::Tls(s) => s.get_ref(),
+            RawCdStream::Plain(s) => s,
+        }
+    }
+}
+
+impl Read for RawCdStream {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            RawCdStream::Tls(s) => s.read(buf),
+            RawCdStream::Plain(s) => s.read(buf),
+        }
+    }
+}
+
+impl Write for RawCdStream {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        match self {
+            RawCdStream::Tls(s) => s.write(buf),
+            RawCdStream::Plain(s) => s.write(buf),
+        }
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        match self {
+            RawCdStream::Tls(s) => s.flush(),
+            RawCdStream::Plain(s) => s.flush(),
+        }
     }
 }
 
