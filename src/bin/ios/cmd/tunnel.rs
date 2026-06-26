@@ -30,7 +30,7 @@ use crate::cmd::output::{print_json, ActionResult, OutputMode};
 use anyhow::{bail, Context, Result};
 use ios_rs::lockdown::LockdownSession;
 use ios_rs::rsd::{PeerInfo, ServiceEntry};
-use ios_rs::tunnel::{detect_version, Ios17Tunnel, SmoltcpTunnel, DAEMON_SOCKET};
+use ios_rs::tunnel::{detect_version, Ios17Tunnel, RawCdStream, SmoltcpTunnel, DAEMON_SOCKET};
 use ios_rs::usbmux::{Connection as MuxConn, Event, MuxSocket};
 
 const PID_PATH: &str = "/tmp/ios-rsd.pid";
@@ -92,6 +92,20 @@ struct DeviceTunnel {
     peer_info: PeerInfo,
     device_name: String,
     ecid: u64,
+    /// The device's own RemotePairing identity UUID (from SRP M6).
+    /// This is what the device would advertise in _remotepairing._tcp mDNS.
+    peer_pairing_identifier: String,
+    /// Cached RSD Handshake message, replayed to answer `_rsd` connections
+    /// instantly from cache (so CoreDevice sees ProductType without a round-trip).
+    #[allow(dead_code)] // disabled tunnelservice probe; kept for reference
+    rsd_handshake: ios_rs::xpc::Message,
+    /// Canonical device values from lockdown `GetValue(nil,nil)`, fetched over
+    /// usbmux→lockdownd BEFORE the CDTunnel/RSD handshake.  This is the authoritative,
+    /// always-available source for ProductType / BuildVersion / ProductVersion /
+    /// HardwareModel / CPUArchitecture that CoreDeviceService needs to derive the
+    /// device's supported features (platform/deviceType/osBuildUpdate) — without which
+    /// the tunnel usage assertion fails RemotePairingError 1005.
+    lockdown_values: plist::Dictionary,
 }
 
 #[derive(Clone)]
@@ -122,6 +136,25 @@ fn tunnel_plist_dict(udid: &str, dt: &DeviceTunnel) -> plist::Dictionary {
         "OSVersion".into(),
         plist::Value::String(dt.peer_info.os_version.clone()),
     );
+    // OS build (e.g. "23B85") → CoreDeviceService's osBuildUpdate.  Prefer the canonical
+    // lockdown value (fetched pre-handshake); fall back to the RSD handshake's value.
+    let build_version = dt
+        .lockdown_values
+        .get("BuildVersion")
+        .and_then(|v| v.as_string())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_owned())
+        .unwrap_or_else(|| dt.peer_info.build_version.clone());
+    d.insert("BuildVersion".into(), plist::Value::String(build_version));
+    // Canonical, pre-handshake device values from lockdown GetValue(nil,nil)
+    // (ProductType/ProductVersion/BuildVersion/HardwareModel/CPUArchitecture/…).  This is
+    // the authoritative set the bridge serves to CoreDevice so it can derive supported
+    // features (platform/deviceType/osBuildUpdate) and not fail the tunnel assertion 1005.
+    // (The device's full RSD Properties are already cached in DeviceTunnel.rsd_handshake.)
+    d.insert(
+        "LockdownValues".into(),
+        plist::Value::Dictionary(dt.lockdown_values.clone()),
+    );
     d.insert(
         "DeviceName".into(),
         plist::Value::String(dt.device_name.clone()),
@@ -133,6 +166,38 @@ fn tunnel_plist_dict(udid: &str, dt: &DeviceTunnel) -> plist::Dictionary {
     d.insert(
         "Services".into(),
         plist::Value::Integer(plist::Integer::from(dt.services.len() as i64)),
+    );
+    // Full service catalog: name → port, so the client can open sockets for all services.
+    let mut svc_ports = plist::Dictionary::new();
+    for (name, entry) in &dt.services {
+        svc_ports.insert(
+            name.clone(),
+            plist::Value::Integer(plist::Integer::from(entry.port as i64)),
+        );
+    }
+    d.insert("ServicePorts".into(), plist::Value::Dictionary(svc_ports));
+    // The device's own RemotePairing identity UUID — what it uses in _remotepairing._tcp mDNS.
+    if !dt.peer_pairing_identifier.is_empty() {
+        d.insert(
+            "RemotePairingIdentifier".into(),
+            plist::Value::String(dt.peer_pairing_identifier.clone()),
+        );
+    }
+
+    // CDTunnel parameters so clients can construct the IPv6 layer themselves.
+    d.insert(
+        "TunnelServerAddr".into(),
+        plist::Value::String(dt.tunnel.params.server_addr.to_string()),
+    );
+    d.insert(
+        "TunnelClientAddr".into(),
+        plist::Value::String(dt.tunnel.params.client_addr.to_string()),
+    );
+    d.insert(
+        "TunnelRSDPort".into(),
+        plist::Value::Integer(plist::Integer::from(
+            dt.tunnel.params.server_rsd_port as i64,
+        )),
     );
     d
 }
@@ -449,6 +514,14 @@ fn handle_client(mut stream: MuxSocket, state: &State, socket_path: Option<&str>
         match rt {
             "List" => return handle_list(&mut stream, state),
             "Watch" => return handle_watch(stream, state),
+            "RawTunnel" => {
+                let udid = dict
+                    .get("UDID")
+                    .and_then(|v| v.as_string())
+                    .context("RawTunnel: no UDID")?
+                    .to_owned();
+                return handle_raw_tunnel(stream, &udid);
+            }
             "Shutdown" => {
                 send_ok(&mut stream).ok();
                 eprintln!("[ios-rsd] shutdown requested");
@@ -477,18 +550,32 @@ fn handle_client(mut stream: MuxSocket, state: &State, socket_path: Option<&str>
         return send_err(&mut stream, &format!("{e:#}"));
     }
 
-    // "_rsd" — raw proxy to the RSD port; RemoteXPC + handshake done by the client.
-    if service == "_rsd" {
-        let (tunnel, server_addr, rsd_port) = {
+    // Raw port proxies (RemoteXPC + handshake done by the client):
+    //   "_rsd"          — raw proxy to the device's RSD port.
+    //   "_rawport:<N>"  — raw proxy to an arbitrary device port <N>.  Used by the
+    //                     bridge for the DYNAMIC ports that the device's
+    //                     untrusted.tunnelservice spawns via get_service (coredevice
+    //                     deviceinfo/appservice/etc.), which are not in the RSD
+    //                     catalog and therefore have no named service.
+    let rawport: Option<u16> = if service == "_rsd" {
+        Some(0) // sentinel: use server_rsd_port
+    } else {
+        service
+            .strip_prefix("_rawport:")
+            .and_then(|p| p.parse::<u16>().ok())
+    };
+    if let Some(req_port) = rawport {
+        let (tunnel, server_addr, port) = {
             let s = state.lock().unwrap();
             let dt = s.tunnels.get(&udid).context("tunnel vanished")?;
-            (
-                Arc::clone(&dt.tunnel),
-                dt.tunnel.params.server_addr,
-                dt.tunnel.params.server_rsd_port,
-            )
+            let port = if req_port == 0 {
+                dt.tunnel.params.server_rsd_port
+            } else {
+                req_port
+            };
+            (Arc::clone(&dt.tunnel), dt.tunnel.params.server_addr, port)
         };
-        match tunnel.connect(server_addr, rsd_port) {
+        match tunnel.connect(server_addr, port) {
             Ok(smc) => {
                 send_ok(&mut stream)?;
                 proxy(stream, smc);
@@ -602,8 +689,10 @@ fn ensure_tunnel(udid: &str, state: &State) -> Result<()> {
         .with_context(|| format!("device {udid} not connected"))?;
     let device_id = device.device_id;
 
-    // Fetch device_name and ECID from lockdown before establishing CDTunnel.
-    let (device_name, ecid) = {
+    // Fetch device_name, ECID and the canonical device values from lockdown BEFORE
+    // establishing the CDTunnel — this is the authoritative, pre-handshake source for
+    // ProductType/BuildVersion/etc. that CoreDeviceService needs (see DeviceTunnel).
+    let (device_name, ecid, lockdown_values) = {
         let mut ld = LockdownSession::open_paired(device_id, udid)
             .context("lockdown open for device metadata")?;
         let info = ld.get_all_values().context("lockdown get_all_values")?;
@@ -612,7 +701,35 @@ fn ensure_tunnel(udid: &str, state: &State) -> Result<()> {
             .unwrap_or(plist::Value::Integer(0.into()))
             .as_unsigned_integer()
             .unwrap_or(0);
-        (info.device_name, ecid)
+        let mut lv = plist::Dictionary::new();
+        let mut put = |k: &str, s: &str| {
+            if !s.is_empty() {
+                lv.insert(k.into(), plist::Value::String(s.to_owned()));
+            }
+        };
+        put("ProductType", &info.product_type);
+        put("ProductVersion", &info.product_version);
+        put("HardwareModel", &info.hardware_model);
+        put("CPUArchitecture", &info.cpu_architecture);
+        put("UniqueDeviceID", &info.unique_device_id);
+        put("SerialNumber", &info.serial_number);
+        // BuildVersion (e.g. "23B85") + any other useful keys live in `extra`.
+        for k in [
+            "BuildVersion",
+            "ProductName",
+            "DeviceClass",
+            "ChipID",
+            "HardwarePlatform",
+        ] {
+            if let Some(v) = info.extra.get(k) {
+                lv.insert(k.into(), v.clone());
+            }
+        }
+        eprintln!(
+            "[ios-rsd] lockdown values for {udid}: {:?}",
+            lv.iter().map(|(k, _)| k.as_str()).collect::<Vec<_>>()
+        );
+        (info.device_name, ecid, lv)
     };
 
     let version = detect_version(device_id).context("detect version")?;
@@ -621,8 +738,10 @@ fn ensure_tunnel(udid: &str, state: &State) -> Result<()> {
     let rsd = t.connect_rsd().context("RSD handshake")?;
     let peer_info = rsd.peer_info().clone();
     let services = rsd.services().clone();
+    let rsd_handshake = rsd.handshake().clone();
     let n = services.len();
 
+    let tunnel_arc = Arc::new(t.stack);
     {
         let mut s = state.lock().unwrap();
         // Use Entry to detect whether we actually insert (two threads may race here).
@@ -630,12 +749,15 @@ fn ensure_tunnel(udid: &str, state: &State) -> Result<()> {
             std::collections::hash_map::Entry::Occupied(_) => false,
             std::collections::hash_map::Entry::Vacant(v) => {
                 v.insert(DeviceTunnel {
-                    tunnel: Arc::new(t.stack),
-                    services,
+                    tunnel: Arc::clone(&tunnel_arc),
+                    services: services.clone(),
                     device_id,
                     peer_info,
                     device_name,
                     ecid,
+                    peer_pairing_identifier: String::new(),
+                    rsd_handshake,
+                    lockdown_values,
                 });
                 true
             }
@@ -646,6 +768,13 @@ fn ensure_tunnel(udid: &str, state: &State) -> Result<()> {
         }
     }
     eprintln!("[ios-rsd] tunnel ready for {udid} ({n} services)");
+
+    // NOTE: a background probe to com.apple.internal.dt.coredevice.untrusted.tunnelservice
+    // used to run here to fetch the CoreDevice identifier.  It never worked (timed out) and
+    // — critically — opening that service appears to disturb CoreDevice's own use of it,
+    // leaving CoreDeviceService unable to derive device features (platform/deviceType/osBuild
+    // come back nil, so the device is stuck "Connecting").  Disabled.
+    let _ = &tunnel_arc;
     Ok(())
 }
 
@@ -700,6 +829,106 @@ fn proxy(ipc: MuxSocket, smc: std::os::unix::net::UnixStream) {
     io::copy(&mut ipc_r, &mut smc_w).ok();
 }
 
+/// Handle a `{Request:"RawTunnel", UDID}` request: open a fresh CoreDeviceProxy CDTunnel
+/// (no smoltcp), reply with the negotiated tunnel params, then splice the raw IPv6 stream
+/// straight to the client. Lets a caller (the device bridge) run a transparent relay.
+fn handle_raw_tunnel(mut stream: MuxSocket, udid: &str) -> Result<()> {
+    let device_id = {
+        let mut conn = MuxConn::open().context("usbmux open")?;
+        let devices = conn.list_devices().context("list devices")?;
+        match devices.iter().find(|d| d.serial.eq_ignore_ascii_case(udid)) {
+            Some(d) => d.device_id,
+            None => return send_err(&mut stream, &format!("device {udid} not connected")),
+        }
+    };
+    let (dev, params) = match Ios17Tunnel::connect_raw_cdtunnel(device_id, udid) {
+        Ok(x) => x,
+        Err(e) => return send_err(&mut stream, &format!("raw CDTunnel: {e:#}")),
+    };
+    eprintln!(
+        "[ios-rsd] RAW tunnel for {udid}: client={} server={} rsd={} mtu={}",
+        params.client_addr, params.server_addr, params.server_rsd_port, params.mtu
+    );
+    let mut resp = plist::Dictionary::new();
+    resp.insert("Status".into(), plist::Value::String("Ok".into()));
+    resp.insert(
+        "ServerAddr".into(),
+        plist::Value::String(params.server_addr.to_string()),
+    );
+    resp.insert(
+        "ClientAddr".into(),
+        plist::Value::String(params.client_addr.to_string()),
+    );
+    resp.insert(
+        "RSDPort".into(),
+        plist::Value::Integer((params.server_rsd_port as u64).into()),
+    );
+    resp.insert(
+        "MTU".into(),
+        plist::Value::Integer((params.mtu as u64).into()),
+    );
+    send_plist(&mut stream, &plist::Value::Dictionary(resp))?;
+    splice_raw(dev, stream);
+    Ok(())
+}
+
+/// Splice raw IPv6 bytes between a raw CoreDeviceProxy stream (TLS — NOT splittable for
+/// concurrent read+write) and the daemon client socket. One thread owns `dev` (polls it
+/// with a short read timeout, and drains a channel of client→device bytes); a second
+/// thread blocking-reads the client into that channel.
+fn splice_raw(mut dev: RawCdStream, client: MuxSocket) {
+    let mut client_w = match client.try_clone() {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+    let mut client_r = client;
+    let (tx, rx) = mpsc::channel::<Vec<u8>>();
+    std::thread::spawn(move || {
+        let mut buf = [0u8; 65536];
+        loop {
+            match client_r.read(&mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    if tx.send(buf[..n].to_vec()).is_err() {
+                        break;
+                    }
+                }
+            }
+        }
+    });
+    dev.tcp()
+        .set_read_timeout(Some(Duration::from_millis(2)))
+        .ok();
+    let mut buf = vec![0u8; 65536];
+    loop {
+        match dev.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => {
+                if client_w.write_all(&buf[..n]).is_err() {
+                    break;
+                }
+                let _ = client_w.flush();
+            }
+            Err(e)
+                if e.kind() == io::ErrorKind::WouldBlock || e.kind() == io::ErrorKind::TimedOut => {
+            }
+            Err(_) => break,
+        }
+        loop {
+            match rx.try_recv() {
+                Ok(data) => {
+                    if dev.write_all(&data).is_err() {
+                        return;
+                    }
+                    let _ = dev.flush();
+                }
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(mpsc::TryRecvError::Disconnected) => return,
+            }
+        }
+    }
+}
+
 // ── plist framing (4-byte BE length prefix + XML plist) ───────────────────────
 
 fn send_plist(s: &mut impl Write, val: &plist::Value) -> Result<()> {
@@ -732,6 +961,139 @@ fn send_err(s: &mut impl Write, msg: &str) -> Result<()> {
     d.insert("Status".into(), plist::Value::String("Error".into()));
     d.insert("Error".into(), plist::Value::String(msg.into()));
     send_plist(s, &plist::Value::Dictionary(d))
+}
+
+/// Query the CoreDevice identifier from `com.apple.internal.dt.coredevice.untrusted.tunnelservice`.
+///
+/// Runs the actual RPC in an inner thread and enforces a 10-second timeout via channel,
+/// because the smoltcp UnixStream socket pair does not honour SO_RCVTIMEO and the service
+/// may never respond if the protocol framing is wrong.
+#[allow(dead_code)] // disabled tunnelservice probe (superseded by raw relay)
+fn get_coredevice_identifier(
+    tunnel: Arc<SmoltcpTunnel>,
+    port: Option<u16>,
+    udid: &str,
+) -> Option<String> {
+    eprintln!("[ios-rsd] get_coredevice_identifier: udid={udid} port={port:?}");
+    let port = port.or_else(|| {
+        eprintln!("[ios-rsd] untrusted.tunnelservice not in catalog");
+        None
+    })?;
+    let udid = udid.to_owned();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::Builder::new()
+        .name(format!("coredevice-rpc-{udid}"))
+        .spawn(move || {
+            tx.send(query_tunnelservice_identifier(&tunnel, port, &udid))
+                .ok();
+        })
+        .ok();
+    match rx.recv_timeout(Duration::from_secs(10)) {
+        Ok(result) => result,
+        Err(_) => {
+            eprintln!("[ios-rsd] coredevice identifier query timed out");
+            None
+        }
+    }
+}
+
+/// Inner blocking query — called from a dedicated thread.
+#[allow(dead_code)]
+fn query_tunnelservice_identifier(stack: &SmoltcpTunnel, port: u16, _udid: &str) -> Option<String> {
+    use ios_rs::xpc::Value;
+    use std::collections::HashMap;
+    use std::net::TcpListener;
+
+    let stream = stack
+        .connect(stack.params.server_addr, port)
+        .map_err(|e| eprintln!("[ios-rsd] untrusted.tunnelservice connect: {e}"))
+        .ok()?;
+
+    // Relay the UnixStream through a loopback TCP socket (RemoteXpcConn needs TcpStream).
+    let listener = TcpListener::bind("127.0.0.1:0").ok()?;
+    let relay_addr = listener.local_addr().ok()?;
+    std::thread::spawn(move || {
+        if let Ok((server, _)) = listener.accept() {
+            let mut r = stream.try_clone().unwrap();
+            let mut w = stream;
+            let mut tw = server.try_clone().unwrap();
+            let mut tr = server;
+            let t1 = std::thread::spawn(move || {
+                std::io::copy(&mut r, &mut tw).ok();
+            });
+            let t2 = std::thread::spawn(move || {
+                std::io::copy(&mut tr, &mut w).ok();
+            });
+            let _ = (t1.join(), t2.join());
+        }
+    });
+
+    let conn = ios_rs::remotexpc::RemoteXpcConn::connect(relay_addr)
+        .map_err(|e| eprintln!("[ios-rsd] untrusted.tunnelservice XPC: {e}"))
+        .ok()?;
+
+    // The untrusted.tunnelservice speaks a cmd-based protocol, not the flat CoreDevice.* format.
+    // Step 1: list_services to discover available services and their ports.
+    let mut list_req: HashMap<String, Value> = HashMap::new();
+    list_req.insert("cmd".into(), Value::String("list_services".into()));
+    match conn.request(Value::Dictionary(list_req)) {
+        Ok(reply) => {
+            eprintln!("[ios-rsd] list_services reply: {reply:?}");
+        }
+        Err(e) => {
+            eprintln!("[ios-rsd] list_services failed: {e}");
+            return None;
+        }
+    }
+
+    // Step 2: get_service for deviceinfo
+    let mut get_req: HashMap<String, Value> = HashMap::new();
+    get_req.insert("cmd".into(), Value::String("get_service".into()));
+    get_req.insert(
+        "name".into(),
+        Value::String("com.apple.coredevice.deviceinfo".into()),
+    );
+    match conn.request(Value::Dictionary(get_req)) {
+        Ok(reply) => {
+            eprintln!("[ios-rsd] get_service deviceinfo reply: {reply:?}");
+            extract_identifier_from_reply(&reply)
+        }
+        Err(e) => {
+            eprintln!("[ios-rsd] get_service failed: {e}");
+            None
+        }
+    }
+}
+
+#[allow(dead_code)]
+fn extract_identifier_from_reply(reply: &ios_rs::xpc::Value) -> Option<String> {
+    use ios_rs::xpc::Value;
+    let dict = reply.as_dict()?;
+    let Some(output_val) = dict.get("CoreDevice.output") else {
+        eprintln!(
+            "[ios-rsd] getdeviceinfo reply keys: {:?}",
+            dict.keys().collect::<Vec<_>>()
+        );
+        return None;
+    };
+    let output = output_val.as_dict()?;
+
+    // Try common paths for the device UUID in getdeviceinfo response.
+    for key in &["deviceIdentifier", "identifier", "uniqueDeviceIdentifier"] {
+        if let Some(Value::String(s)) = output.get(*key) {
+            if !s.is_empty() {
+                eprintln!("[ios-rsd] getdeviceinfo.{key} = {s}");
+                return Some(s.clone());
+            }
+        }
+    }
+
+    // Log all string keys in the output for debugging.
+    eprintln!(
+        "[ios-rsd] getdeviceinfo output keys: {:?}",
+        output.keys().collect::<Vec<_>>()
+    );
+    None
 }
 
 fn read_exact<R: Read>(r: &mut R, buf: &mut [u8]) -> Result<()> {
